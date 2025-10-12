@@ -116,99 +116,114 @@ impl ChessBoard {
         attacks
     }
 
-    pub const fn generate_direction_masks() -> [[Bitboard; 8]; 64] {
-        let mut masks = [[Bitboard::EMPTY; 8]; 64];
-        let mut sq = 0;
-        while sq < 64 {
-            let file = sq % 8;
-            let rank = sq / 8;
+    pub const fn generate_direction_masks() -> (
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+    ) {
+        let mut north = [Bitboard::EMPTY; 64];
+        let mut south = [Bitboard::EMPTY; 64];
+        let mut east = [Bitboard::EMPTY; 64];
+        let mut west = [Bitboard::EMPTY; 64];
+        let mut ne = [Bitboard::EMPTY; 64];
+        let mut nw = [Bitboard::EMPTY; 64];
+        let mut se = [Bitboard::EMPTY; 64];
+        let mut sw = [Bitboard::EMPTY; 64];
 
-            // Direction 0 = North
+        let mut i = 0;
+        while i < 64 {
+            let file = i % 8;
+            let rank = i / 8;
+
+            // North
             let mut r = rank + 1;
             while r < 8 {
-                masks[sq][0].set((r * 8 + file) as u8);
+                north[i].set((r * 8 + file) as u8);
                 r += 1;
             }
 
-            // Direction 1 = South
-            let mut r = rank;
-            while r > 0 {
+            // South
+            let mut r = rank as i8 - 1;
+            while r >= 0 {
+                south[i].set((r as usize * 8 + file) as u8);
                 r -= 1;
-                masks[sq][1].set((r * 8 + file) as u8);
             }
 
-            // Direction 2 = East
+            // East
             let mut f = file + 1;
             while f < 8 {
-                masks[sq][2].set((rank * 8 + f) as u8);
+                east[i].set((rank * 8 + f) as u8);
                 f += 1;
             }
 
-            // Direction 3 = West
-            let mut f = file;
-            while f > 0 {
+            // West
+            let mut f = file as i8 - 1;
+            while f >= 0 {
+                west[i].set((rank * 8 + f as usize) as u8);
                 f -= 1;
-                masks[sq][3].set((rank * 8 + f) as u8);
             }
 
-            // Direction 4 = NorthEast
+            // North-East
             let mut r = rank + 1;
             let mut f = file + 1;
             while r < 8 && f < 8 {
-                masks[sq][4].set((r * 8 + f) as u8);
+                ne[i].set((r * 8 + f) as u8);
                 r += 1;
                 f += 1;
             }
 
-            // Direction 5 = NorthWest
+            // North-West
             let mut r = rank + 1;
-            let mut f = file;
-            while r < 8 && f > 0 {
-                f -= 1;
-                masks[sq][5].set((r * 8 + f) as u8);
+            let mut f = file as i8 - 1;
+            while r < 8 && f >= 0 {
+                nw[i].set((r * 8 + f as usize) as u8);
                 r += 1;
+                f -= 1;
             }
 
-            // Direction 6 = SouthEast
-            let mut r = rank;
+            // South-East
+            let mut r = rank as i8 - 1;
             let mut f = file + 1;
-            while r > 0 && f < 8 {
+            while r >= 0 && f < 8 {
+                se[i].set((r as usize * 8 + f) as u8);
                 r -= 1;
-                masks[sq][6].set((r * 8 + f) as u8);
                 f += 1;
             }
 
-            // Direction 7 = SouthWest
-            let mut r = rank;
-            let mut f = file;
-            while r > 0 && f > 0 {
+            // South-West
+            let mut r = rank as i8 - 1;
+            let mut f = file as i8 - 1;
+            while r >= 0 && f >= 0 {
+                sw[i].set((r as usize * 8 + f as usize) as u8);
                 r -= 1;
                 f -= 1;
-                masks[sq][7].set((r * 8 + f) as u8);
             }
 
-            sq += 1;
-        }
-        masks
-    }
-
-    const fn generate_queen_attacks() -> [Bitboard; 64] {
-        let mut attacks = [Bitboard::empty(); 64];
-        let mut i = 0;
-        while i < 64 {
-            attacks[i].0 |= Self::ROOK_ATTACKS[i].0 | Self::BISHOP_ATTACKS[i].0;
             i += 1;
         }
-        attacks
+
+        (north, ne, east, se, south, sw, west, nw)
     }
 
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
     pub const PAWN_ATTACKS: [Bitboard; 64] = Self::generate_pawn_attacks();
+    pub const RAYS: (
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+        [Bitboard; 64],
+    ) = Self::generate_direction_masks();
     pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
-    pub const ROOK_ATTACKS: [Bitboard; 64] = Self::generate_rook_attacks();
-    pub const BISHOP_ATTACKS: [Bitboard; 64] = Self::generate_bishop_attacks();
-    pub const QUEEN_ATTACKS: [Bitboard; 64] = Self::generate_queen_attacks();
 
     pub fn empty() -> Self {
         ChessBoard {
