@@ -222,7 +222,7 @@ impl ChessBoard {
         [Bitboard; 64],
         [Bitboard; 64],
         [Bitboard; 64],
-    ) = Self::generate_direction_masks();
+    ) = Self::generate_direction_masks(); // 0-7 -> n, ne, e, se, s, sw, w, nw
     pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
 
     pub fn empty() -> Self {
