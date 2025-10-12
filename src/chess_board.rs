@@ -116,69 +116,80 @@ impl ChessBoard {
         attacks
     }
 
-    const fn generate_rook_attacks() -> [Bitboard; 64] {
-        let mut attacks = [Bitboard::EMPTY; 64];
+    pub const fn generate_direction_masks() -> [[Bitboard; 8]; 64] {
+        let mut masks = [[Bitboard::EMPTY; 8]; 64];
+        let mut sq = 0;
+        while sq < 64 {
+            let file = sq % 8;
+            let rank = sq / 8;
 
-        let mut i = 0;
-        while i < 64 {
-            let file = i % 8;
-            let rank = i / 8;
-            let mut j = 0;
-            while j < 8 {
-                attacks[i].set((rank * 8 + j) as u8);
-                j += 1;
+            // Direction 0 = North
+            let mut r = rank + 1;
+            while r < 8 {
+                masks[sq][0].set((r * 8 + file) as u8);
+                r += 1;
             }
-            j = 0;
-            while j < 8 {
-                attacks[i].set((j * 8 + file) as u8);
-                j += 1;
+
+            // Direction 1 = South
+            let mut r = rank;
+            while r > 0 {
+                r -= 1;
+                masks[sq][1].set((r * 8 + file) as u8);
             }
-            attacks[i].clear(rank as u8 * 8 + file as u8);
-            i += 1;
+
+            // Direction 2 = East
+            let mut f = file + 1;
+            while f < 8 {
+                masks[sq][2].set((rank * 8 + f) as u8);
+                f += 1;
+            }
+
+            // Direction 3 = West
+            let mut f = file;
+            while f > 0 {
+                f -= 1;
+                masks[sq][3].set((rank * 8 + f) as u8);
+            }
+
+            // Direction 4 = NorthEast
+            let mut r = rank + 1;
+            let mut f = file + 1;
+            while r < 8 && f < 8 {
+                masks[sq][4].set((r * 8 + f) as u8);
+                r += 1;
+                f += 1;
+            }
+
+            // Direction 5 = NorthWest
+            let mut r = rank + 1;
+            let mut f = file;
+            while r < 8 && f > 0 {
+                f -= 1;
+                masks[sq][5].set((r * 8 + f) as u8);
+                r += 1;
+            }
+
+            // Direction 6 = SouthEast
+            let mut r = rank;
+            let mut f = file + 1;
+            while r > 0 && f < 8 {
+                r -= 1;
+                masks[sq][6].set((r * 8 + f) as u8);
+                f += 1;
+            }
+
+            // Direction 7 = SouthWest
+            let mut r = rank;
+            let mut f = file;
+            while r > 0 && f > 0 {
+                r -= 1;
+                f -= 1;
+                masks[sq][7].set((r * 8 + f) as u8);
+            }
+
+            sq += 1;
         }
-        attacks
-    }
-
-    const fn generate_bishop_attacks() -> [Bitboard; 64] {
-        let mut attacks = [Bitboard::EMPTY; 64];
-        let mut i = 0;
-
-        while i < 64 {
-            let file = i % 8;
-            let rank = i / 8;
-
-            // Top-left
-            let mut j = 1;
-            while file >= j && rank >= j {
-                attacks[i].set(((rank - j) * 8 + (file - j)) as u8);
-                j += 1;
-            }
-
-            // Top-right
-            j = 1;
-            while file + j < 8 && rank >= j {
-                attacks[i].set(((rank - j) * 8 + (file + j)) as u8);
-                j += 1;
-            }
-
-            // Bottom-right
-            j = 1;
-            while file + j < 8 && rank + j < 8 {
-                attacks[i].set(((rank + j) * 8 + (file + j)) as u8);
-                j += 1;
-            }
-
-            // Bottom-left
-            j = 1;
-            while file >= j && rank + j < 8 {
-                attacks[i].set(((rank + j) * 8 + (file - j)) as u8);
-                j += 1;
-            }
-
-            i += 1;
-        }
-
-        attacks
+        masks
     }
 
     const fn generate_queen_attacks() -> [Bitboard; 64] {
@@ -194,6 +205,7 @@ impl ChessBoard {
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
     pub const PAWN_ATTACKS: [Bitboard; 64] = Self::generate_pawn_attacks();
+    pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
     pub const ROOK_ATTACKS: [Bitboard; 64] = Self::generate_rook_attacks();
     pub const BISHOP_ATTACKS: [Bitboard; 64] = Self::generate_bishop_attacks();
     pub const QUEEN_ATTACKS: [Bitboard; 64] = Self::generate_queen_attacks();
