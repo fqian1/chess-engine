@@ -31,7 +31,8 @@ impl ChessBoard {
 
                         if nx >= 0 && nx < 8 && ny >= 0 && ny < 8 {
                             let target_square_index = (nx + ny * 8) as usize;
-                            current_square_attacks.set(target_square_index as u8);
+                            current_square_attacks
+                                .set(ChessSquare::new(target_square_index as u8).unwrap());
                         }
                     }
                     dy += 1;
@@ -64,7 +65,8 @@ impl ChessBoard {
 
                         if nx >= 0 && nx < 8 && ny >= 0 && ny < 8 {
                             let target_square_index = (nx + ny * 8) as usize;
-                            current_square_attacks.set(target_square_index as u8);
+                            current_square_attacks
+                                .set(ChessSquare::new(target_square_index as u8).unwrap());
                         }
                     }
                     dy += 1;
@@ -143,28 +145,28 @@ impl ChessBoard {
             // North
             let mut r = rank + 1;
             while r < 8 {
-                north[i].set((r * 8 + file) as u8);
+                north[i].set(ChessSquare((r * 8 + file) as u8));
                 r += 1;
             }
 
             // South
             let mut r = rank as i8 - 1;
             while r >= 0 {
-                south[i].set((r as usize * 8 + file) as u8);
+                south[i].set(ChessSquare((r as usize * 8 + file) as u8));
                 r -= 1;
             }
 
             // East
             let mut f = file + 1;
             while f < 8 {
-                east[i].set((rank * 8 + f) as u8);
+                east[i].set(ChessSquare((rank * 8 + f) as u8));
                 f += 1;
             }
 
             // West
             let mut f = file as i8 - 1;
             while f >= 0 {
-                west[i].set((rank * 8 + f as usize) as u8);
+                west[i].set(ChessSquare((rank * 8 + f as usize) as u8));
                 f -= 1;
             }
 
@@ -172,7 +174,7 @@ impl ChessBoard {
             let mut r = rank + 1;
             let mut f = file + 1;
             while r < 8 && f < 8 {
-                ne[i].set((r * 8 + f) as u8);
+                ne[i].set(ChessSquare((r * 8 + f) as u8));
                 r += 1;
                 f += 1;
             }
@@ -181,7 +183,7 @@ impl ChessBoard {
             let mut r = rank + 1;
             let mut f = file as i8 - 1;
             while r < 8 && f >= 0 {
-                nw[i].set((r * 8 + f as usize) as u8);
+                nw[i].set(ChessSquare((r * 8 + f as usize) as u8));
                 r += 1;
                 f -= 1;
             }
@@ -190,7 +192,7 @@ impl ChessBoard {
             let mut r = rank as i8 - 1;
             let mut f = file + 1;
             while r >= 0 && f < 8 {
-                se[i].set((r as usize * 8 + f) as u8);
+                se[i].set(ChessSquare((r as usize * 8 + f) as u8));
                 r -= 1;
                 f += 1;
             }
@@ -199,7 +201,7 @@ impl ChessBoard {
             let mut r = rank as i8 - 1;
             let mut f = file as i8 - 1;
             while r >= 0 && f >= 0 {
-                sw[i].set((r as usize * 8 + f as usize) as u8);
+                sw[i].set(ChessSquare((r as usize * 8 + f as usize) as u8));
                 r -= 1;
                 f -= 1;
             }
@@ -268,34 +270,34 @@ impl ChessBoard {
         let color_idx = piece.color as usize;
         let piece_idx = piece_type_to_index(piece.piece_type);
 
-        self.pieces[color_idx][piece_idx].clear(square.0);
+        self.pieces[color_idx][piece_idx].clear(square);
 
         match piece.color {
             Color::White => {
-                self.white_occupancy.clear(square.0);
+                self.white_occupancy.clear(square);
             }
             Color::Black => {
-                self.black_occupancy.clear(square.0);
+                self.black_occupancy.clear(square);
             }
         }
-        self.all_pieces.clear(square.0);
+        self.all_pieces.clear(square);
     }
 
     pub fn add_piece(&mut self, piece: ChessPiece, square: ChessSquare) {
         let color_idx = piece.color as usize;
         let piece_idx = piece_type_to_index(piece.piece_type);
 
-        self.pieces[color_idx][piece_idx].set(square.0);
+        self.pieces[color_idx][piece_idx].set(square);
 
         match piece.color {
             Color::White => {
-                self.white_occupancy.set(square.0);
+                self.white_occupancy.set(square);
             }
             Color::Black => {
-                self.black_occupancy.set(square.0);
+                self.black_occupancy.set(square);
             }
         }
-        self.all_pieces.set(square.0);
+        self.all_pieces.set(square);
     }
 
     pub fn move_piece(&mut self, from_sq: ChessSquare, to_sq: ChessSquare, piece: ChessPiece) {

@@ -116,16 +116,16 @@ impl Bitboard {
         (self.0 & (1 << square.index())) != 0
     }
 
-    pub const fn set(&mut self, square: u8) {
-        self.0 |= 1 << square;
+    pub const fn set(&mut self, square: ChessSquare) {
+        self.0 |= 1 << square.0;
     }
 
-    pub const fn clear(&mut self, square: u8) {
-        self.0 &= !(1 << square);
+    pub const fn clear(&mut self, square: ChessSquare) {
+        self.0 &= !(1 << square.0);
     }
 
-    pub const fn toggle(&mut self, square: u8) {
-        self.0 ^= 1 << square;
+    pub const fn toggle(&mut self, square: ChessSquare) {
+        self.0 ^= 1 << square.0;
     }
 
     pub fn union(self, other: Self) -> Self {

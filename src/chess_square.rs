@@ -77,7 +77,7 @@ impl ChessSquare {
     pub const G8: ChessSquare = ChessSquare(62);
     pub const H8: ChessSquare = ChessSquare(63);
 
-    pub fn new(index: u8) -> Option<Self> {
+    pub const fn new(index: u8) -> Option<Self> {
         if index < 64 {
             Some(ChessSquare(index))
         } else {
