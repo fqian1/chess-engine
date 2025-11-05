@@ -2,10 +2,10 @@ use super::{Bitboard, ChessPiece, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessBoard {
-    pieces: [[Bitboard; 6]; 2],
-    white_occupancy: Bitboard,
-    black_occupancy: Bitboard,
-    all_pieces: Bitboard,
+    pub pieces: [[Bitboard; 6]; 2],
+    pub white_occupancy: Bitboard,
+    pub black_occupancy: Bitboard,
+    pub all_pieces: Bitboard,
 }
 
 const fn piece_type_to_index(pt: PieceType) -> usize {
@@ -118,113 +118,92 @@ impl ChessBoard {
         attacks
     }
 
-    pub const fn generate_direction_masks() -> (
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-    ) {
+    pub const fn generate_rook_direction_masks() -> [[Bitboard; 64]; 4] {
         let mut north = [Bitboard::EMPTY; 64];
         let mut south = [Bitboard::EMPTY; 64];
         let mut east = [Bitboard::EMPTY; 64];
         let mut west = [Bitboard::EMPTY; 64];
-        let mut ne = [Bitboard::EMPTY; 64];
-        let mut nw = [Bitboard::EMPTY; 64];
-        let mut se = [Bitboard::EMPTY; 64];
-        let mut sw = [Bitboard::EMPTY; 64];
 
         let mut i = 0;
         while i < 64 {
             let file = i % 8;
             let rank = i / 8;
 
-            // North
             let mut r = rank + 1;
             while r < 8 {
                 north[i].set(ChessSquare((r * 8 + file) as u8));
                 r += 1;
             }
 
-            // South
             let mut r = rank as i8 - 1;
             while r >= 0 {
                 south[i].set(ChessSquare((r as usize * 8 + file) as u8));
                 r -= 1;
             }
 
-            // East
             let mut f = file + 1;
             while f < 8 {
                 east[i].set(ChessSquare((rank * 8 + f) as u8));
                 f += 1;
             }
 
-            // West
             let mut f = file as i8 - 1;
             while f >= 0 {
                 west[i].set(ChessSquare((rank * 8 + f as usize) as u8));
                 f -= 1;
             }
 
-            // North-East
-            let mut r = rank + 1;
-            let mut f = file + 1;
-            while r < 8 && f < 8 {
-                ne[i].set(ChessSquare((r * 8 + f) as u8));
-                r += 1;
-                f += 1;
+            i += 1;
+        }
+
+        [north, east, south, west]
+    }
+
+    const fn generate_bishop_direction_masks() -> [[Bitboard; 64]; 4] {
+        let mut direction_masks = [[Bitboard::EMPTY; 64]; 4];
+
+        let mut i = 0;
+        while i < 64 {
+            let file = i % 8;
+            let rank = i / 8;
+
+            let mut j = 1;
+            while file >= j && rank >= j {
+                direction_masks[0][i].set(ChessSquare(((rank - j) * 8 + (file - j)) as u8));
+                j += 1;
             }
 
-            // North-West
-            let mut r = rank + 1;
-            let mut f = file as i8 - 1;
-            while r < 8 && f >= 0 {
-                nw[i].set(ChessSquare((r * 8 + f as usize) as u8));
-                r += 1;
-                f -= 1;
+            j = 1;
+            while file + j < 8 && rank >= j {
+                direction_masks[1][i].set(ChessSquare(((rank - j) * 8 + (file + j)) as u8));
+                j += 1;
             }
 
-            // South-East
-            let mut r = rank as i8 - 1;
-            let mut f = file + 1;
-            while r >= 0 && f < 8 {
-                se[i].set(ChessSquare((r as usize * 8 + f) as u8));
-                r -= 1;
-                f += 1;
+            j = 1;
+            while file + j < 8 && rank + j < 8 {
+                direction_masks[2][i].set(ChessSquare(((rank + j) * 8 + (file + j)) as u8));
+                j += 1;
             }
 
-            // South-West
-            let mut r = rank as i8 - 1;
-            let mut f = file as i8 - 1;
-            while r >= 0 && f >= 0 {
-                sw[i].set(ChessSquare((r as usize * 8 + f as usize) as u8));
-                r -= 1;
-                f -= 1;
+            j = 1;
+            while file >= j && rank + j < 8 {
+                direction_masks[3][i].set(ChessSquare(((rank + j) * 8 + (file - j)) as u8));
+                j += 1;
             }
 
             i += 1;
         }
 
-        (north, ne, east, se, south, sw, west, nw)
+        direction_masks
     }
 
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
     pub const PAWN_ATTACKS: [Bitboard; 64] = Self::generate_pawn_attacks();
-    pub const RAYS: (
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-        [Bitboard; 64],
-    ) = Self::generate_direction_masks(); // 0-7 -> n, ne, e, se, s, sw, w, nw
+    // NORTH EAST SOUTH WEST
+    pub const ROOK_ATTACKS: [[Bitboard; 64]; 4] = Self::generate_rook_direction_masks();
+    // NW NE SE SW
+    pub const BISHOP_ATTACKS: [[Bitboard; 64]; 4] = Self::generate_bishop_direction_masks();
     pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
 
     pub fn empty() -> Self {
@@ -312,11 +291,11 @@ impl ChessBoard {
 
         let square_bit = square.bitboard();
 
-        if (square_bit & self.all_pieces) == Bitboard::empty() {
+        if (square_bit & self.all_pieces) == Bitboard::EMPTY {
             return None;
         }
 
-        let color = if (self.white_occupancy & square_bit) != Bitboard::empty() {
+        let color = if (self.white_occupancy & square_bit) != Bitboard::EMPTY {
             Color::White
         } else {
             Color::Black

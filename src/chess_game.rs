@@ -1,9 +1,11 @@
-use super::{CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
+use super::{
+    Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct ChessGame {
-    board: ChessBoard,
+    pub board: ChessBoard,
     pub side_to_move: Color,
     pub castling_rights: CastlingRights,
     pub en_passant: Option<ChessSquare>,
@@ -20,8 +22,6 @@ impl Default for ChessGame {
 
 impl ChessGame {
     pub fn from_fen(fen: &str) -> Self {
-        // Assumes valid and well-formed FEN input
-
         let mut parts = fen.split(' ');
         let board_str = parts.next().expect("FEN missing board");
         let side_str = parts.next().expect("FEN missing side to move");
@@ -66,7 +66,7 @@ impl ChessGame {
                         'R' | 'r' => PieceType::Rook,
                         'Q' | 'q' => PieceType::Queen,
                         'K' | 'k' => PieceType::King,
-                        _ => unreachable!("FEN is assumed correct, invalid piece char"),
+                        _ => unreachable!("Invalid piece char"),
                     };
 
                     let index = (rank as usize) * 8 + (file as usize);
@@ -79,10 +79,7 @@ impl ChessGame {
 
         let en_passant = match ep_str {
             "-" => None,
-            s => Some(
-                ChessSquare::from_name(s)
-                    .expect("FEN is assumed correct, invalid en passant square"),
-            ),
+            s => Some(ChessSquare::from_name(s).expect("Invalid en passant square")),
         };
 
         let mut board = ChessBoard::empty();
@@ -110,7 +107,6 @@ impl ChessGame {
     pub fn to_fen(&self) -> String {
         let mut fen = String::new();
 
-        // Board
         for rank in (0..8).rev() {
             let mut empty = 0;
 
@@ -149,7 +145,6 @@ impl ChessGame {
             }
         }
 
-        // Game state
         fen.push(' ');
         fen.push(if self.side_to_move == Color::White {
             'w'
@@ -177,7 +172,6 @@ impl ChessGame {
         let from_sq = ChessSquare::from_name(&from_str).ok_or("Invalid from square")?;
         let to_sq = ChessSquare::from_name(&to_str).ok_or("Invalid to square")?;
 
-        // Handle promotion
         let promoted_type = if let Some(p) = promotion {
             match p {
                 'q' => Some(PieceType::Queen),
@@ -198,22 +192,47 @@ impl ChessGame {
     }
 
     pub fn validate_move(&self, mov: &mut ChessMove) -> Result<(), &str> {
-        let Some(piece_moved) = self.board.get_piece_at(mov.from) else {
+        let from_sq = mov.from;
+        let to_sq = mov.from;
+        let Some(piece) = self.board.get_piece_at(from_sq) else {
             return Err("No piece selected");
         };
 
-        if piece_moved.color != self.side_to_move {
+
+        if piece.color != self.side_to_move {
             return Err("Move opponent piece");
         }
 
-        if let Some(target_piece) = self.board.get_piece_at(mov.to)
+        if let Some(target_piece) = self.board.get_piece_at(to_sq)
             && target_piece.color == self.side_to_move
         {
             return Err("Cannot capture own piece");
         }
 
-        match piece_moved.piece_type {
-            PieceType::Pawn => {}
+        match piece.piece_type {
+            PieceType::Pawn => {
+                self.board.remove_piece(piece, from_sq);
+                if ChessBoard::PAWN_ATTACKS[mov.from.0 as usize] & self.board.all_pieces
+                    == Bitboard::EMPTY
+                {
+                    self.board.add_piece(piece, to_sq);
+                    return Ok(());
+                }
+                return Err("uh");
+            }
+
+            PieceType::Rook => {
+                let direction = match mov.from.rank() as isize - mov.to.rank() as isize {
+                    ..-1 => 3,
+                    1.. => 1,
+                    _ => match mov.from.file() as isize - mov.to.file() as isize {
+                        ..-1 => 0,
+                        1.. => 2,
+                        _ => return Err("Invalid move"),
+                    },
+                };
+                if ChessBoard::ROOK_ATTACKS[direction][mov.from.0 as usize] & self.board.all_pieces
+            }
         }
 
         Ok(())

@@ -41,33 +41,26 @@ impl Bitboard {
     pub const ALL_PIECES: Bitboard =
         Bitboard(Bitboard::BLACK_OCCUPANCY.0 | Bitboard::WHITE_OCCUPANCY.0);
 
-    pub fn new(value: u64) -> Self {
-        Self(value)
+    const FILE_A: u64 = 0x0101_0101_0101_0101;
+    const FILE_H: u64 = 0x8080_8080_8080_8080;
+
+    pub const fn set(&mut self, square: ChessSquare) {
+        self.0 |= 1 << square.0;
     }
 
-    pub const fn empty() -> Self {
-        Self(0)
+    pub fn clear(&mut self, square: ChessSquare) {
+        self.0 &= !(1 << square.0);
     }
 
-    pub fn print_bitboard(&self) {
-        for rank in (0..8).rev() {
-            for file in 0..8 {
-                let index = rank * 8 + file;
-                if self.0 & (1 << index) != 0 {
-                    print!("1 ");
-                } else {
-                    print!(". ");
-                }
-            }
-            println!();
-        }
+    pub fn toggle(&mut self, square: ChessSquare) {
+        self.0 ^= 1 << square.0;
     }
 
     pub fn from_square(square: ChessSquare) -> Self {
-        Self(1 << square.index())
+        Self(1 << square.0)
     }
 
-    pub fn count_ones(&self) -> u32 {
+    pub fn count(&self) -> u32 {
         self.0.count_ones()
     }
 
@@ -75,108 +68,54 @@ impl Bitboard {
         self.0 == 0
     }
 
-    pub fn is_set(self, square: ChessSquare) -> bool {
+    pub fn is_set(&self, square: ChessSquare) -> bool {
         (self.0 & (1u64 << square.0)) != 0
     }
 
-    pub fn lsb_square(self) -> Option<ChessSquare> {
-        if self.0 == 0 {
+    pub fn lsb_square(&self) -> Option<ChessSquare> {
+        if self.is_empty() {
             None
         } else {
             Some(ChessSquare(self.0.trailing_zeros() as u8))
         }
     }
 
-    pub fn lsb_idx(&self) -> Option<u8> {
-        if self.0 == 0 {
-            None
-        } else {
-            Some(self.0.trailing_zeros() as u8)
-        }
-    }
-
     pub fn pop_lsb(&mut self) -> Option<ChessSquare> {
-        if let Some(idx) = self.lsb_idx() {
-            self.0 ^= 1u64 << idx;
-            Some(ChessSquare(idx))
-        } else {
-            None
-        }
+        let square = self.lsb_square()?;
+        self.0 &= self.0 - 1;
+        Some(square)
     }
 
-    pub fn msb_square(self) -> Option<ChessSquare> {
-        if self.0 == 0 {
-            None
-        } else {
-            Some(ChessSquare(63 - self.0.leading_zeros() as u8))
-        }
-    }
-
-    pub fn contains(&self, square: ChessSquare) -> bool {
-        (self.0 & (1 << square.index())) != 0
-    }
-
-    pub const fn set(&mut self, square: ChessSquare) {
-        self.0 |= 1 << square.0;
-    }
-
-    pub const fn clear(&mut self, square: ChessSquare) {
-        self.0 &= !(1 << square.0);
-    }
-
-    pub const fn toggle(&mut self, square: ChessSquare) {
-        self.0 ^= 1 << square.0;
-    }
-
-    pub fn union(self, other: Self) -> Self {
-        Bitboard(self.0 | other.0)
-    }
-
-    pub fn intersection(self, other: Self) -> Self {
-        Bitboard(self.0 & other.0)
-    }
-
-    pub fn difference(self, other: Self) -> Self {
-        Bitboard(self.0 & !other.0)
-    }
-
-    pub fn symmetric_difference(self, other: Self) -> Self {
-        Bitboard(self.0 ^ other.0)
-    }
-
-    pub fn not(self) -> Self {
-        Bitboard(!self.0)
-    }
-
-    // Shift left (e.g., pawn push) - assumes no wrap around rank 8
     pub fn shift_north(self) -> Self {
         Bitboard(self.0 << 8)
     }
-    // Shift right (e.g., pawn capture) - assumes no wrap around file h
-    pub fn shift_east(self) -> Self {
-        Bitboard(self.0 >> 1)
-    }
-    // Shift left (e.g., pawn capture) - assumes no wrap around file a
-    pub fn shift_west(self) -> Self {
-        Bitboard(self.0 << 1)
-    }
-    // Shift right (e.g., pawn push) - assumes no wrap around rank 1
+
     pub fn shift_south(self) -> Self {
         Bitboard(self.0 >> 8)
     }
 
-    pub fn print(&self) {
-        for rank in (0..8).rev() {
-            for file in 0..8 {
-                let index = rank * 8 + file;
-                if self.0 & (1 << index) != 0 {
-                    print!("1 ");
-                } else {
-                    print!(". ");
-                }
-            }
-            println!();
-        }
+    pub fn shift_east(self) -> Self {
+        Bitboard((self.0 & !Bitboard::FILE_H) << 1)
+    }
+
+    pub fn shift_west(self) -> Self {
+        Bitboard((self.0 & !Self::FILE_A) >> 1)
+    }
+
+    pub fn shift_north_east(self) -> Self {
+        Bitboard((self.0 & !Self::FILE_H) << 9)
+    }
+
+    pub fn shift_north_west(self) -> Self {
+        Bitboard((self.0 & !Self::FILE_A) << 7)
+    }
+
+    pub fn shift_south_east(self) -> Self {
+        Bitboard((self.0 & !Self::FILE_H) >> 7)
+    }
+
+    pub fn shift_south_west(self) -> Self {
+        Bitboard((self.0 & !Self::FILE_A) >> 9)
     }
 }
 
@@ -199,28 +138,6 @@ impl fmt::Display for Bitboard {
     }
 }
 
-// Implement bitwise operations
-impl std::ops::BitOr for Bitboard {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0)
-    }
-}
-
-impl std::ops::BitAnd for Bitboard {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self::Output {
-        Self(self.0 & rhs.0)
-    }
-}
-
-impl std::ops::BitXor for Bitboard {
-    type Output = Self;
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Self(self.0 ^ rhs.0)
-    }
-}
-
 impl std::ops::Not for Bitboard {
     type Output = Self;
     fn not(self) -> Self::Output {
@@ -228,10 +145,39 @@ impl std::ops::Not for Bitboard {
     }
 }
 
-impl std::ops::BitOrAssign for Bitboard {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 |= rhs.0;
-    }
+macro_rules! impl_bit_ops {
+    ($($trait:ident, $fn:ident, $op:tt),*) => {
+        $(
+            impl std::ops::$trait for Bitboard {
+                type Output = Self;
+                fn $fn(self, rhs: Self) -> Self::Output {
+                    Self(self.0 $op rhs.0)
+                }
+            }
+        )*
+    };
 }
 
-// Implement other bitwise operaqtionstions (BitAnd, BitXor, Not, etc.) similarly...
+macro_rules! impl_bit_assign_ops {
+    ($($trait:ident, $fn:ident, $op:tt),*) => {
+        $(
+            impl std::ops::$trait for Bitboard {
+                fn $fn(&mut self, rhs: Self) {
+                    self.0 $op rhs.0;
+                }
+            }
+        )*
+    };
+}
+
+impl_bit_ops! {
+    BitAnd, bitand, &,
+    BitOr, bitor, |,
+    BitXor, bitxor, ^
+}
+
+impl_bit_assign_ops! {
+    BitAndAssign, bitand_assign, &=,
+    BitOrAssign, bitor_assign, |=,
+    BitXorAssign, bitxor_assign, ^=
+}

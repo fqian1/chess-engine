@@ -29,7 +29,6 @@ impl ChessMove {
             if promo_char != 'Q' && promo_char != 'R' && promo_char != 'B' && promo_char != 'N' {
                 return Err("Invalid promotion piece");
             }
-            // Add check: Ensure the move is actually a pawn moving to the last rank
             Some(PieceType::from_char(promo_char).ok_or("Invalid promotion piece type")?)
         } else {
             None
@@ -50,7 +49,7 @@ impl ChessMove {
                 PieceType::Rook => 'r',
                 PieceType::Bishop => 'b',
                 PieceType::Knight => 'n',
-                _ => ' ', // Shouldn't happen for valid promotions
+                _ => ' ',
             });
         }
         uci
