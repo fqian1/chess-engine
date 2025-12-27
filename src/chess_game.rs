@@ -1,7 +1,7 @@
 use super::{
     Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, btree_map::Keys};
 
 #[derive(Debug, Clone)]
 pub struct ChessGame {
@@ -191,51 +191,122 @@ impl ChessGame {
         })
     }
 
-    pub fn validate_move(&self, mov: &mut ChessMove) -> Result<(), &str> {
+    pub fn validate_move(&mut self, mov: &mut ChessMove) -> Result<(), &str> {
         let from_sq = mov.from;
         let to_sq = mov.from;
-        let Some(piece) = self.board.get_piece_at(from_sq) else {
+
+        let Some(from_piece) = self.board.get_piece_at(from_sq) else {
             return Err("No piece selected");
         };
 
-
-        if piece.color != self.side_to_move {
+        if from_piece.color != self.side_to_move {
             return Err("Move opponent piece");
         }
 
-        if let Some(target_piece) = self.board.get_piece_at(to_sq)
-            && target_piece.color == self.side_to_move
-        {
-            return Err("Cannot capture own piece");
+        if let Some(to_piece) = self.board.get_piece_at(to_sq) {
+            if to_piece.color == self.side_to_move {
+                return Err("Cannot capture own piece");
+            }
         }
 
-        match piece.piece_type {
+        let dx = (to_sq.file() as i8) - (from_sq.file() as i8);
+        let dy = (to_sq.rank() as i8) - (from_sq.rank() as i8);
+        let abs_dx = dx.abs();
+        let abs_dy = dy.abs();
+
+        match from_piece.piece_type {
             PieceType::Pawn => {
-                self.board.remove_piece(piece, from_sq);
-                if ChessBoard::PAWN_ATTACKS[mov.from.0 as usize] & self.board.all_pieces
-                    == Bitboard::EMPTY
+                if (ChessBoard::PAWN_ATTACKS[mov.from.0 as usize] & self.board.all_pieces)
+                    .is_empty()
                 {
-                    self.board.add_piece(piece, to_sq);
                     return Ok(());
                 }
-                return Err("uh");
+                return Err("Invalid Pawn move");
             }
 
             PieceType::Rook => {
-                let direction = match mov.from.rank() as isize - mov.to.rank() as isize {
-                    ..-1 => 3,
-                    1.. => 1,
-                    _ => match mov.from.file() as isize - mov.to.file() as isize {
-                        ..-1 => 0,
-                        1.. => 2,
-                        _ => return Err("Invalid move"),
-                    },
-                };
-                if ChessBoard::ROOK_ATTACKS[direction][mov.from.0 as usize] & self.board.all_pieces
+                let mut ray_board = ChessBoard::ROOK_ATTACKS[mov.from.0 as usize]
+                    .iter()
+                    .find(|board| board.is_set(to_sq))
+                    .copied()
+                    .expect("Invalid to square");
+
+                ray_board &= self.board.all_pieces;
+                ray_board.toggle(from_sq);
+
+                if mov.from.0 as isize - mov.to.0 as isize > 0 {
+                    if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
+                        return Ok(());
+                    }
+                } else {
+                    if ray_board.msb_square().is_some_and(|sq| sq == to_sq) {
+                        return Ok(());
+                    }
+                }
+                return Err("Invalid Bishop Move");
+            }
+
+            PieceType::Bishop => {
+                let mut ray_board = ChessBoard::BISHOP_ATTACKS[mov.from.0 as usize]
+                    .iter()
+                    .find(|board| board.is_set(to_sq))
+                    .copied()
+                    .expect("Invalid to square");
+
+                ray_board &= self.board.all_pieces;
+                ray_board.toggle(from_sq);
+
+                if mov.from.0 as isize - mov.to.0 as isize > 0 {
+                    if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
+                        return Ok(());
+                    }
+                } else {
+                    if ray_board.msb_square().is_some_and(|sq| sq == to_sq) {
+                        return Ok(());
+                    }
+                }
+                return Err("Invalid Bishop Move");
+            }
+
+            PieceType::Knight => {
+                if (abs_dx == 1 && abs_dy == 2) || (abs_dx == 2 && abs_dy == 1) {
+                    return Ok(());
+                }
+                return Err("Invalid knight move");
+            }
+
+            PieceType::Queen => {
+                let mut combined: [[Bitboard; 128]; 4] = [[Bitboard::EMPTY; 128]; 4];
+                for i in 0..4 {
+                    combined[i][0..64].copy_from_slice(&ChessBoard::ROOK_ATTACKS[i]);
+                    combined[i][64..128].copy_from_slice(&ChessBoard::BISHOP_ATTACKS[i]);
+                }
+                let mut ray_board = combined[mov.from.0 as usize]
+                    .iter()
+                    .find(|board| board.is_set(to_sq))
+                    .copied()
+                    .expect("Invalid to square");
+
+                ray_board &= self.board.all_pieces;
+                ray_board.toggle(from_sq);
+
+                if mov.from.0 as isize - mov.to.0 as isize > 0 {
+                    if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
+                        return Ok(());
+                    }
+                } else {
+                    if ray_board.msb_square().is_some_and(|sq| sq == to_sq) {
+                        return Ok(());
+                    }
+                }
+            }
+
+            PieceType::King => {
+                return Ok(());
             }
         }
 
-        Ok(())
+        return Err("Something wrong happened");
     }
 
     pub fn make_move(&mut self, mv: &ChessMove) {
@@ -304,7 +375,7 @@ impl ChessGame {
             }
         }
 
-        // Rook moved from original square
+        // If rook moved from original square
         match mv.from {
             ChessSquare::H1 => rights_to_remove |= CastlingRights::WHITE_KINGSIDE,
             ChessSquare::A1 => rights_to_remove |= CastlingRights::WHITE_QUEENSIDE,
@@ -313,7 +384,7 @@ impl ChessGame {
             _ => {}
         }
 
-        // Rook was captured on original square
+        // If rook was captured on original square
         match mv.to {
             ChessSquare::H1 => rights_to_remove |= CastlingRights::WHITE_KINGSIDE,
             ChessSquare::A1 => rights_to_remove |= CastlingRights::WHITE_QUEENSIDE,

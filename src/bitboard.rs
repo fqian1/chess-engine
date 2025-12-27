@@ -80,6 +80,21 @@ impl Bitboard {
         }
     }
 
+    pub fn msb_square(&self) -> Option<ChessSquare> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(ChessSquare(self.0.leading_zeros() as u8))
+        }
+    }
+
+    pub fn pop_msb(&mut self) -> Option<ChessSquare> {
+        let square = self.msb_square()?;
+        self.0 &= self.0 - 1;
+        Some(square)
+    }
+
+
     pub fn pop_lsb(&mut self) -> Option<ChessSquare> {
         let square = self.lsb_square()?;
         self.0 &= self.0 - 1;
