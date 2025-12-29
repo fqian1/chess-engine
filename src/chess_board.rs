@@ -13,6 +13,20 @@ const fn piece_type_to_index(pt: PieceType) -> usize {
 }
 
 impl ChessBoard {
+    const fn generate_rays() -> [[Bitboard; 64]; 64] {
+        let mut rays = [[Bitboard::EMPTY; 64]; 64];
+        let mut i = 0;
+        while i < 64 {
+            let mut j = 0;
+            while j < 64 {
+                let file: usize = i % 8;
+                let rank: usize = i / 8;
+                j += 1;
+            }
+            i += 1;
+        }
+        [[Bitboard::EMPTY; 64]; 64]
+    }
     const fn generate_knight_attacks() -> [Bitboard; 64] {
         let mut attacks = [Bitboard::EMPTY; 64];
 
@@ -199,12 +213,12 @@ impl ChessBoard {
 
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
+    pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
     pub const PAWN_ATTACKS: [Bitboard; 64] = Self::generate_pawn_attacks();
     // NORTH EAST SOUTH WEST
     pub const ROOK_ATTACKS: [[Bitboard; 64]; 4] = Self::generate_rook_direction_masks();
     // NW NE SE SW
     pub const BISHOP_ATTACKS: [[Bitboard; 64]; 4] = Self::generate_bishop_direction_masks();
-    pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
 
     pub fn empty() -> Self {
         ChessBoard {

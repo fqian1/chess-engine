@@ -193,48 +193,58 @@ impl ChessGame {
 
     pub fn validate_move(&mut self, mov: &mut ChessMove) -> Result<(), &str> {
         let from_sq = mov.from;
-        let to_sq = mov.from;
+        let to_sq = mov.to;
 
         let Some(from_piece) = self.board.get_piece_at(from_sq) else {
             return Err("No piece selected");
         };
 
         if from_piece.color != self.side_to_move {
-            return Err("Move opponent piece");
+            return Err("Opponent Piece Selected");
         }
 
         if let Some(to_piece) = self.board.get_piece_at(to_sq) {
             if to_piece.color == self.side_to_move {
-                return Err("Cannot capture own piece");
+                return Err("Ally piece targeted");
             }
         }
 
-        let dx = (to_sq.file() as i8) - (from_sq.file() as i8);
-        let dy = (to_sq.rank() as i8) - (from_sq.rank() as i8);
-        let abs_dx = dx.abs();
-        let abs_dy = dy.abs();
-
         match from_piece.piece_type {
             PieceType::Pawn => {
-                if (ChessBoard::PAWN_ATTACKS[mov.from.0 as usize] & self.board.all_pieces)
-                    .is_empty()
-                {
+                // Pawn Pushes
+                let pawn_moves = ChessBoard::PAWN_MOVES[from_sq.0 as usize];
+                if pawn_moves.is_set(to_sq) && (pawn_moves & self.board.all_pieces).is_empty() {
                     return Ok(());
                 }
-                return Err("Invalid Pawn move");
+
+                // Pawn Captures
+                let pawn_attacks = ChessBoard::PAWN_ATTACKS[from_sq.0 as usize];
+
+                match self.side_to_move {
+                    Color::White => {
+                        if self.board.black_occupancy.is_set(to_sq) && pawn_attacks.is_set(to_sq) {
+                            return Ok(());
+                        }
+                    }
+                    Color::Black => {
+                        if self.board.white_occupancy.is_set(to_sq) && pawn_attacks.is_set(to_sq) {
+                            return Ok(());
+                        }
+                    }
+                }
+                return Err("Invalid move");
             }
 
             PieceType::Rook => {
-                let mut ray_board = ChessBoard::ROOK_ATTACKS[mov.from.0 as usize]
+                let mut ray_board = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
                     .iter()
                     .find(|board| board.is_set(to_sq))
                     .copied()
-                    .expect("Invalid to square");
+                    .ok_or("Invalid Rook Move")?;
 
                 ray_board &= self.board.all_pieces;
-                ray_board.toggle(from_sq);
 
-                if mov.from.0 as isize - mov.to.0 as isize > 0 {
+                if from_sq.0 as isize - to_sq.0 as isize > 0 {
                     if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
                         return Ok(());
                     }
@@ -243,20 +253,19 @@ impl ChessGame {
                         return Ok(());
                     }
                 }
-                return Err("Invalid Bishop Move");
+                return Err("Invalid Rook Move");
             }
 
             PieceType::Bishop => {
-                let mut ray_board = ChessBoard::BISHOP_ATTACKS[mov.from.0 as usize]
+                let mut ray_board = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
                     .iter()
                     .find(|board| board.is_set(to_sq))
                     .copied()
-                    .expect("Invalid to square");
+                    .ok_or("Invalid Bishop Move")?;
 
                 ray_board &= self.board.all_pieces;
-                ray_board.toggle(from_sq);
 
-                if mov.from.0 as isize - mov.to.0 as isize > 0 {
+                if from_sq.0 as isize - to_sq.0 as isize > 0 {
                     if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
                         return Ok(());
                     }
@@ -269,7 +278,8 @@ impl ChessGame {
             }
 
             PieceType::Knight => {
-                if (abs_dx == 1 && abs_dy == 2) || (abs_dx == 2 && abs_dy == 1) {
+                let knight_move = ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize];
+                if knight_move.is_set(to_sq) {
                     return Ok(());
                 }
                 return Err("Invalid knight move");
@@ -281,16 +291,15 @@ impl ChessGame {
                     combined[i][0..64].copy_from_slice(&ChessBoard::ROOK_ATTACKS[i]);
                     combined[i][64..128].copy_from_slice(&ChessBoard::BISHOP_ATTACKS[i]);
                 }
-                let mut ray_board = combined[mov.from.0 as usize]
+                let mut ray_board = combined[from_sq.0 as usize]
                     .iter()
                     .find(|board| board.is_set(to_sq))
                     .copied()
-                    .expect("Invalid to square");
+                    .ok_or("Invalid Queen Square")?;
 
                 ray_board &= self.board.all_pieces;
-                ray_board.toggle(from_sq);
 
-                if mov.from.0 as isize - mov.to.0 as isize > 0 {
+                if from_sq.0 as isize - to_sq.0 as isize > 0 {
                     if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
                         return Ok(());
                     }
@@ -299,14 +308,17 @@ impl ChessGame {
                         return Ok(());
                     }
                 }
+                return Err("Invalid Queen Move");
             }
 
             PieceType::King => {
-                return Ok(());
+                let king_move = ChessBoard::KING_ATTACKS[from_sq.0 as usize];
+                if king_move.is_set(to_sq) {
+                    return Ok(());
+                }
+                return Err("Invalid King Move");
             }
         }
-
-        return Err("Something wrong happened");
     }
 
     pub fn make_move(&mut self, mv: &ChessMove) {
