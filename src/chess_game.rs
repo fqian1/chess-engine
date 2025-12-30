@@ -217,6 +217,10 @@ impl ChessGame {
                     return Ok(());
                 }
 
+                if self.en_passant.is_some_and(|sq| sq == to_sq) {
+                    return Ok(());
+                }
+
                 // Pawn Captures
                 let pawn_attacks = ChessBoard::PAWN_ATTACKS[from_sq.0 as usize];
 
@@ -236,45 +240,31 @@ impl ChessGame {
             }
 
             PieceType::Rook => {
-                let mut ray_board = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .find(|board| board.is_set(to_sq))
-                    .copied()
-                    .ok_or("Invalid Rook Move")?;
-
-                ray_board &= self.board.all_pieces;
-
-                if from_sq.0 as isize - to_sq.0 as isize > 0 {
-                    if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
-                        return Ok(());
-                    }
-                } else {
-                    if ray_board.msb_square().is_some_and(|sq| sq == to_sq) {
-                        return Ok(());
-                    }
+                if !ChessBoard::ROOK_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+                    return Err("Invalid move");
                 }
-                return Err("Invalid Rook Move");
+
+                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize];
+
+                if !(ray_board & self.board.all_pieces).is_empty() {
+                    return Err("Rook Move Blocked");
+                }
+
+                return Ok(());
             }
 
             PieceType::Bishop => {
-                let mut ray_board = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .find(|board| board.is_set(to_sq))
-                    .copied()
-                    .ok_or("Invalid Bishop Move")?;
-
-                ray_board &= self.board.all_pieces;
-
-                if from_sq.0 as isize - to_sq.0 as isize > 0 {
-                    if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
-                        return Ok(());
-                    }
-                } else {
-                    if ray_board.msb_square().is_some_and(|sq| sq == to_sq) {
-                        return Ok(());
-                    }
+                if !ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+                    return Err("Invalid Bishop move");
                 }
-                return Err("Invalid Bishop Move");
+
+                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize];
+
+                if !(ray_board & self.board.all_pieces).is_empty() {
+                    return Err("Bishop Move Blocked");
+                }
+
+                return Ok(());
             }
 
             PieceType::Knight => {
@@ -286,29 +276,19 @@ impl ChessGame {
             }
 
             PieceType::Queen => {
-                let mut combined: [[Bitboard; 128]; 4] = [[Bitboard::EMPTY; 128]; 4];
-                for i in 0..4 {
-                    combined[i][0..64].copy_from_slice(&ChessBoard::ROOK_ATTACKS[i]);
-                    combined[i][64..128].copy_from_slice(&ChessBoard::BISHOP_ATTACKS[i]);
+                if !ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize].is_set(to_sq)
+                    && !ChessBoard::ROOK_ATTACKS[from_sq.0 as usize].is_set(to_sq)
+                {
+                    return Err("Invalid move");
                 }
-                let mut ray_board = combined[from_sq.0 as usize]
-                    .iter()
-                    .find(|board| board.is_set(to_sq))
-                    .copied()
-                    .ok_or("Invalid Queen Square")?;
 
-                ray_board &= self.board.all_pieces;
+                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize];
 
-                if from_sq.0 as isize - to_sq.0 as isize > 0 {
-                    if ray_board.lsb_square().is_some_and(|sq| sq == to_sq) {
-                        return Ok(());
-                    }
-                } else {
-                    if ray_board.msb_square().is_some_and(|sq| sq == to_sq) {
-                        return Ok(());
-                    }
+                if !(ray_board & self.board.all_pieces).is_empty() {
+                    return Err("Move Blocked");
                 }
-                return Err("Invalid Queen Move");
+
+                return Ok(());
             }
 
             PieceType::King => {
@@ -316,6 +296,50 @@ impl ChessGame {
                 if king_move.is_set(to_sq) {
                     return Ok(());
                 }
+
+                match self.side_to_move {
+                    Color::White => {
+                        if to_sq == ChessSquare::G1
+                            && self.castling_rights.has(CastlingRights::WHITE_KINGSIDE)
+                            && !self
+                                .board
+                                .all_pieces
+                                .is_set(ChessSquare::from_name("F1").unwrap())
+                        {
+                            return Ok(());
+                        }
+                        if to_sq == ChessSquare::C1
+                            && self.castling_rights.has(CastlingRights::WHITE_QUEENSIDE)
+                            && !self
+                                .board
+                                .all_pieces
+                                .is_set(ChessSquare::from_name("D1").unwrap())
+                        {
+                            return Ok(());
+                        }
+                    }
+                    Color::Black => {
+                        if to_sq == ChessSquare::G8
+                            && self.castling_rights.has(CastlingRights::BLACK_KINGSIDE)
+                            && !self
+                                .board
+                                .all_pieces
+                                .is_set(ChessSquare::from_name("F8").unwrap())
+                        {
+                            return Ok(());
+                        }
+                        if to_sq == ChessSquare::C8
+                            && self.castling_rights.has(CastlingRights::BLACK_QUEENSIDE)
+                            && self
+                                .board
+                                .all_pieces
+                                .is_set(ChessSquare::from_name("D8").unwrap())
+                        {
+                            return Ok(());
+                        }
+                    }
+                }
+
                 return Err("Invalid King Move");
             }
         }

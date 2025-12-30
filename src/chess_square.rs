@@ -85,7 +85,7 @@ impl ChessSquare {
         }
     }
 
-    pub fn from_coords(file: u8, rank: u8) -> Option<Self> {
+    pub const fn from_coords(file: u8, rank: u8) -> Option<Self> {
         if file < 8 && rank < 8 {
             Some(ChessSquare(rank * 8 + file))
         } else {

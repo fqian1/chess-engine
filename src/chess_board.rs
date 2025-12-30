@@ -13,20 +13,43 @@ const fn piece_type_to_index(pt: PieceType) -> usize {
 }
 
 impl ChessBoard {
-    const fn generate_rays() -> [[Bitboard; 64]; 64] {
-        let mut rays = [[Bitboard::EMPTY; 64]; 64];
-        let mut i = 0;
-        while i < 64 {
-            let mut j = 0;
-            while j < 64 {
-                let file: usize = i % 8;
-                let rank: usize = i / 8;
-                j += 1;
+    const fn generate_between() -> [[Bitboard; 64]; 64] {
+        let mut between = [[Bitboard::EMPTY; 64]; 64];
+
+        let mut s1 = 0;
+        while s1 < 64 {
+            let mut s2 = 0;
+            while s2 < 64 {
+                let r1 = (s1 / 8) as i8;
+                let f1 = (s1 % 8) as i8;
+                let r2 = (s2 / 8) as i8;
+                let f2 = (s2 % 8) as i8;
+
+                let dr = r2 - r1;
+                let df = f2 - f1;
+
+                if dr == 0 || df == 0 || dr.abs() == df.abs() {
+                    let step_r = dr.signum();
+                    let step_f = df.signum();
+
+                    let mut curr_r = r1 + step_r;
+                    let mut curr_f = f1 + step_f;
+
+                    while curr_r != r2 || curr_f != f2 {
+                        let bit_idx = (curr_r * 8 + curr_f) as u8;
+                        between[s1][s2].set(ChessSquare(bit_idx));
+
+                        curr_r += step_r;
+                        curr_f += step_f;
+                    }
+                }
+                s2 += 1;
             }
-            i += 1;
+            s1 += 1;
         }
-        [[Bitboard::EMPTY; 64]; 64]
+        between
     }
+
     const fn generate_knight_attacks() -> [Bitboard; 64] {
         let mut attacks = [Bitboard::EMPTY; 64];
 
@@ -132,49 +155,45 @@ impl ChessBoard {
         attacks
     }
 
-    pub const fn generate_rook_direction_masks() -> [[Bitboard; 64]; 4] {
-        let mut north = [Bitboard::EMPTY; 64];
-        let mut south = [Bitboard::EMPTY; 64];
-        let mut east = [Bitboard::EMPTY; 64];
-        let mut west = [Bitboard::EMPTY; 64];
-
+    pub const fn generate_rook_direction_masks() -> [Bitboard; 64] {
         let mut i = 0;
+        let mut boards = [Bitboard::EMPTY; 64];
+
         while i < 64 {
             let file = i % 8;
             let rank = i / 8;
 
             let mut r = rank + 1;
             while r < 8 {
-                north[i].set(ChessSquare((r * 8 + file) as u8));
+                boards[i].set(ChessSquare((r * 8 + file) as u8));
                 r += 1;
             }
 
             let mut r = rank as i8 - 1;
             while r >= 0 {
-                south[i].set(ChessSquare((r as usize * 8 + file) as u8));
+                boards[i].set(ChessSquare((r as usize * 8 + file) as u8));
                 r -= 1;
             }
 
             let mut f = file + 1;
             while f < 8 {
-                east[i].set(ChessSquare((rank * 8 + f) as u8));
+                boards[i].set(ChessSquare((rank * 8 + f) as u8));
                 f += 1;
             }
 
             let mut f = file as i8 - 1;
             while f >= 0 {
-                west[i].set(ChessSquare((rank * 8 + f as usize) as u8));
+                boards[i].set(ChessSquare((rank * 8 + f as usize) as u8));
                 f -= 1;
             }
 
             i += 1;
         }
-
-        [north, east, south, west]
+        boards
     }
 
-    const fn generate_bishop_direction_masks() -> [[Bitboard; 64]; 4] {
-        let mut direction_masks = [[Bitboard::EMPTY; 64]; 4];
+    const fn generate_bishop_direction_masks() -> [Bitboard; 64] {
+        let mut boards = [Bitboard::EMPTY; 64];
 
         let mut i = 0;
         while i < 64 {
@@ -183,32 +202,32 @@ impl ChessBoard {
 
             let mut j = 1;
             while file >= j && rank >= j {
-                direction_masks[0][i].set(ChessSquare(((rank - j) * 8 + (file - j)) as u8));
+                boards[i].set(ChessSquare(((rank - j) * 8 + (file - j)) as u8));
                 j += 1;
             }
 
             j = 1;
             while file + j < 8 && rank >= j {
-                direction_masks[1][i].set(ChessSquare(((rank - j) * 8 + (file + j)) as u8));
+                boards[i].set(ChessSquare(((rank - j) * 8 + (file + j)) as u8));
                 j += 1;
             }
 
             j = 1;
             while file + j < 8 && rank + j < 8 {
-                direction_masks[2][i].set(ChessSquare(((rank + j) * 8 + (file + j)) as u8));
+                boards[i].set(ChessSquare(((rank + j) * 8 + (file + j)) as u8));
                 j += 1;
             }
 
             j = 1;
             while file >= j && rank + j < 8 {
-                direction_masks[3][i].set(ChessSquare(((rank + j) * 8 + (file - j)) as u8));
+                boards[i].set(ChessSquare(((rank + j) * 8 + (file - j)) as u8));
                 j += 1;
             }
 
             i += 1;
         }
 
-        direction_masks
+        boards
     }
 
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
@@ -216,9 +235,11 @@ impl ChessBoard {
     pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
     pub const PAWN_ATTACKS: [Bitboard; 64] = Self::generate_pawn_attacks();
     // NORTH EAST SOUTH WEST
-    pub const ROOK_ATTACKS: [[Bitboard; 64]; 4] = Self::generate_rook_direction_masks();
+    pub const ROOK_ATTACKS: [Bitboard; 64] = Self::generate_rook_direction_masks();
     // NW NE SE SW
-    pub const BISHOP_ATTACKS: [[Bitboard; 64]; 4] = Self::generate_bishop_direction_masks();
+    pub const BISHOP_ATTACKS: [Bitboard; 64] = Self::generate_bishop_direction_masks();
+
+    pub const BETWEEN: [[Bitboard; 64]; 64] = Self::generate_between();
 
     pub fn empty() -> Self {
         ChessBoard {
