@@ -191,7 +191,7 @@ impl ChessGame {
         })
     }
 
-    pub fn validate_move(&mut self, mov: &mut ChessMove) -> Result<(), &str> {
+    pub fn validate_move(&self, mov: &ChessMove) -> Result<(), &str> {
         let from_sq = mov.from;
         let to_sq = mov.to;
 
@@ -211,18 +211,47 @@ impl ChessGame {
 
         match from_piece.piece_type {
             PieceType::Pawn => {
-                // Pawn Pushes
-                let pawn_moves = ChessBoard::PAWN_MOVES[from_sq.0 as usize];
-                if pawn_moves.is_set(to_sq) && (pawn_moves & self.board.all_pieces).is_empty() {
+                let (direction, start_rank) = match self.side_to_move {
+                    Color::White => (1, 1),
+                    Color::Black => (-1, 6),
+                };
+
+                let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
+                let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
+
+                if self.en_passant.is_some_and(|sq| sq == to_sq) && file_diff == 1 {
                     return Ok(());
                 }
 
-                if self.en_passant.is_some_and(|sq| sq == to_sq) {
-                    return Ok(());
+                if file_diff == 0 {
+                    // Single Push
+                    if rank_diff == direction {
+                        if !self.board.all_pieces.is_set(to_sq) {
+                            return Ok(());
+                        }
+                        return Err("Pawn blocked");
+                    }
+                    // Double Push
+                    if rank_diff == 2 * direction {
+                        if from_sq.rank() != start_rank {
+                            return Err("Invalid double push rank");
+                        }
+                        let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
+                        if !self.board.all_pieces.is_set(to_sq)
+                            && !self.board.all_pieces.is_set(mid_sq)
+                        {
+                            return Ok(());
+                        }
+                        return Err("Pawn blocked");
+                    }
                 }
 
                 // Pawn Captures
-                let pawn_attacks = ChessBoard::PAWN_ATTACKS[from_sq.0 as usize];
+                let pawn_attacks = if self.side_to_move == Color::White {
+                    ChessBoard::PAWN_ATTACKS_WHITE[from_sq.0 as usize]
+                } else {
+                    ChessBoard::PAWN_ATTACKS_BLACK[from_sq.0 as usize]
+                };
 
                 match self.side_to_move {
                     Color::White => {
@@ -244,7 +273,7 @@ impl ChessGame {
                     return Err("Invalid move");
                 }
 
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize];
+                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
                 if !(ray_board & self.board.all_pieces).is_empty() {
                     return Err("Rook Move Blocked");
@@ -258,7 +287,8 @@ impl ChessGame {
                     return Err("Invalid Bishop move");
                 }
 
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize];
+                // Safe to unwrap here i think? between must contain every attack board right?
+                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
                 if !(ray_board & self.board.all_pieces).is_empty() {
                     return Err("Bishop Move Blocked");
@@ -282,7 +312,7 @@ impl ChessGame {
                     return Err("Invalid move");
                 }
 
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize];
+                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
                 if !(ray_board & self.board.all_pieces).is_empty() {
                     return Err("Move Blocked");
@@ -297,52 +327,97 @@ impl ChessGame {
                     return Ok(());
                 }
 
-                match self.side_to_move {
-                    Color::White => {
-                        if to_sq == ChessSquare::G1
-                            && self.castling_rights.has(CastlingRights::WHITE_KINGSIDE)
-                            && !self
-                                .board
-                                .all_pieces
-                                .is_set(ChessSquare::from_name("F1").unwrap())
-                        {
-                            return Ok(());
-                        }
-                        if to_sq == ChessSquare::C1
-                            && self.castling_rights.has(CastlingRights::WHITE_QUEENSIDE)
-                            && !self
-                                .board
-                                .all_pieces
-                                .is_set(ChessSquare::from_name("D1").unwrap())
-                        {
+                let Some(between) = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
+                else {
+                    return Err("Castle Blocked");
+                };
+
+                let is_clear = (self.board.all_pieces & between).is_empty();
+
+                match to_sq {
+                    ChessSquare::G1 => {
+                        if self.castling_rights.has(CastlingRights::WHITE_KINGSIDE) && is_clear {
                             return Ok(());
                         }
                     }
-                    Color::Black => {
-                        if to_sq == ChessSquare::G8
-                            && self.castling_rights.has(CastlingRights::BLACK_KINGSIDE)
-                            && !self
-                                .board
-                                .all_pieces
-                                .is_set(ChessSquare::from_name("F8").unwrap())
-                        {
-                            return Ok(());
-                        }
-                        if to_sq == ChessSquare::C8
-                            && self.castling_rights.has(CastlingRights::BLACK_QUEENSIDE)
-                            && self
-                                .board
-                                .all_pieces
-                                .is_set(ChessSquare::from_name("D8").unwrap())
-                        {
+                    ChessSquare::C1 => {
+                        if self.castling_rights.has(CastlingRights::WHITE_QUEENSIDE) && is_clear {
                             return Ok(());
                         }
                     }
+                    ChessSquare::G8 => {
+                        if self.castling_rights.has(CastlingRights::BLACK_KINGSIDE) && is_clear {
+                            return Ok(());
+                        }
+                    }
+                    ChessSquare::C8 => {
+                        if self.castling_rights.has(CastlingRights::BLACK_QUEENSIDE) && is_clear {
+                            return Ok(());
+                        }
+                    }
+                    _ => return Err("Invalid King Move"),
                 }
 
                 return Err("Invalid King Move");
             }
         }
+    }
+
+    pub fn is_square_attacked(&self, sq: ChessSquare, attacker_color: Color) -> bool {
+        let enemy_pieces = &self.board.pieces[attacker_color as usize];
+        let all_pieces = self.board.all_pieces;
+
+        let incoming_pawn_mask = match attacker_color {
+            Color::White => ChessBoard::PAWN_ATTACKS_BLACK[sq.0 as usize],
+            Color::Black => ChessBoard::PAWN_ATTACKS_WHITE[sq.0 as usize],
+        };
+
+        if !(incoming_pawn_mask
+            & self.board.pieces[attacker_color as usize][PieceType::Pawn as usize])
+            .is_empty()
+        {
+            return true;
+        }
+
+        // KNIGHTS
+        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize])
+            .is_empty()
+        {
+            return true;
+        }
+
+        // KINGS
+        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize])
+            .is_empty()
+        {
+            return true;
+        }
+
+        // DIAGONALS
+        let mut diagonal_attackers = (enemy_pieces[PieceType::Bishop as usize]
+            | enemy_pieces[PieceType::Queen as usize])
+            & ChessBoard::BISHOP_ATTACKS[sq.0 as usize];
+
+        while let Some(attacker_sq) = diagonal_attackers.pop_lsb() {
+            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
+            if (path & all_pieces).is_empty() {
+                return true;
+            }
+        }
+
+        // ORTHOGONALS
+        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize]
+            | enemy_pieces[PieceType::Queen as usize])
+            & ChessBoard::ROOK_ATTACKS[sq.0 as usize];
+
+        while let Some(attacker_sq) = straight_attackers.pop_lsb() {
+            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
+            if (path & all_pieces).is_empty() {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn make_move(&mut self, mv: &ChessMove) {
