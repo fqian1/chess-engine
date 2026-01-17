@@ -13,8 +13,8 @@ const fn piece_type_to_index(pt: PieceType) -> usize {
 }
 
 impl ChessBoard {
-    const fn generate_between() -> [[Bitboard; 64]; 64] {
-        let mut between = [[Bitboard::EMPTY; 64]; 64];
+    const fn generate_between() -> [[Option<Bitboard>; 64]; 64] {
+        let mut between = [[None; 64]; 64];
 
         let mut s1 = 0;
         while s1 < 64 {
@@ -29,6 +29,8 @@ impl ChessBoard {
                 let df = f2 - f1;
 
                 if dr == 0 || df == 0 || dr.abs() == df.abs() {
+                    let mut bb = Bitboard::EMPTY;
+
                     let step_r = dr.signum();
                     let step_f = df.signum();
 
@@ -37,11 +39,12 @@ impl ChessBoard {
 
                     while curr_r != r2 || curr_f != f2 {
                         let bit_idx = (curr_r * 8 + curr_f) as u8;
-                        between[s1][s2].set(ChessSquare(bit_idx));
+                        bb.set(ChessSquare(bit_idx));
 
                         curr_r += step_r;
                         curr_f += step_f;
                     }
+                    between[s1][s2] = Some(bb);
                 }
                 s2 += 1;
             }
@@ -116,26 +119,7 @@ impl ChessBoard {
         attacks
     }
 
-    const fn generate_pawn_moves() -> [Bitboard; 64] {
-        let mut attacks = [Bitboard::EMPTY; 64];
-
-        let mut i = 0;
-        while i < 56 {
-            let square_bb = 1u64 << i;
-            let mut current_square_attacks = 0u64;
-
-            current_square_attacks |= square_bb << 8;
-            if i >= 8 && i <= 15 {
-                current_square_attacks |= square_bb << 16;
-            }
-
-            attacks[i] = Bitboard(current_square_attacks);
-            i += 1;
-        }
-        attacks
-    }
-
-    const fn generate_pawn_attacks() -> [Bitboard; 64] {
+    const fn generate_white_pawn_attacks() -> [Bitboard; 64] {
         let mut attacks = [Bitboard::EMPTY; 64];
 
         const NOT_A_FILE: u64 = 0xFEFEFEFEFEFEFEFE;
@@ -146,8 +130,28 @@ impl ChessBoard {
             let square_bb = 1u64 << i;
             let mut current_square_attacks = 0u64;
 
-            current_square_attacks |= (square_bb << 7) & NOT_A_FILE;
-            current_square_attacks |= (square_bb << 9) & NOT_H_FILE;
+            current_square_attacks |= (square_bb << 7) & NOT_H_FILE;
+            current_square_attacks |= (square_bb << 9) & NOT_A_FILE;
+
+            attacks[i] = Bitboard(current_square_attacks);
+            i += 1;
+        }
+        attacks
+    }
+
+    const fn generate_black_pawn_attacks() -> [Bitboard; 64] {
+        let mut attacks = [Bitboard::EMPTY; 64];
+
+        const NOT_A_FILE: u64 = 0xFEFEFEFEFEFEFEFE;
+        const NOT_H_FILE: u64 = 0x7F7F7F7F7F7F7F7F;
+
+        let mut i = 0;
+        while i < 64 {
+            let square_bb = 1u64 << i;
+            let mut current_square_attacks = 0u64;
+
+            current_square_attacks |= (square_bb >> 7) & NOT_A_FILE;
+            current_square_attacks |= (square_bb >> 9) & NOT_H_FILE;
 
             attacks[i] = Bitboard(current_square_attacks);
             i += 1;
@@ -232,14 +236,14 @@ impl ChessBoard {
 
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
-    pub const PAWN_MOVES: [Bitboard; 64] = Self::generate_pawn_moves();
-    pub const PAWN_ATTACKS: [Bitboard; 64] = Self::generate_pawn_attacks();
+    pub const PAWN_ATTACKS_WHITE: [Bitboard; 64] = Self::generate_white_pawn_attacks();
+    pub const PAWN_ATTACKS_BLACK: [Bitboard; 64] = Self::generate_black_pawn_attacks();
     // NORTH EAST SOUTH WEST
     pub const ROOK_ATTACKS: [Bitboard; 64] = Self::generate_rook_direction_masks();
     // NW NE SE SW
     pub const BISHOP_ATTACKS: [Bitboard; 64] = Self::generate_bishop_direction_masks();
 
-    pub const BETWEEN: [[Bitboard; 64]; 64] = Self::generate_between();
+    pub const BETWEEN: [[Option<Bitboard>; 64]; 64] = Self::generate_between();
 
     pub fn empty() -> Self {
         ChessBoard {
@@ -254,7 +258,7 @@ impl ChessBoard {
         ChessBoard {
             pieces: [
                 [
-                    Bitboard::BLACK_PAWNS,
+                    Bitboard::WHITE_PAWNS,
                     Bitboard::WHITE_KNIGHTS,
                     Bitboard::WHITE_BISHOPS,
                     Bitboard::WHITE_ROOKS,
