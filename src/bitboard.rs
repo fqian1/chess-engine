@@ -94,7 +94,6 @@ impl Bitboard {
         Some(square)
     }
 
-
     pub fn pop_lsb(&mut self) -> Option<ChessSquare> {
         let square = self.lsb_square()?;
         self.0 &= self.0 - 1;
