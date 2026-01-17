@@ -132,6 +132,10 @@ impl Bitboard {
     pub fn shift_south_west(self) -> Self {
         Bitboard((self.0 & !Self::FILE_A) >> 9)
     }
+
+    pub fn flip(&mut self) {
+        self.0 = self.0.swap_bytes()
+    }
 }
 
 impl fmt::Display for Bitboard {
