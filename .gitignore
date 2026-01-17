@@ -1,2 +1,28 @@
+# --- System Files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Environments & Secrets ---
+.env
+.env.local
+.direnv/
+pip-log.txt
+venv/
+.venv/
+node_modules/
+
+# --- IDE & Editor Settings ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Logs & Temporaries ---
+*.log
+tmp/
+temp/
+dist/
+build/
+out/
 /target
-GEMINI.md
