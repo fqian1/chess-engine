@@ -17,7 +17,7 @@ pub struct GameStateEntry {
 
 #[derive(Debug, Clone)]
 pub struct ChessGame {
-    pub board: ChessBoard,
+    pub chessboard: ChessBoard,
     pub side_to_move: Color,
     pub castling_rights: CastlingRights,
     pub en_passant: Option<ChessSquare>,
@@ -103,7 +103,7 @@ impl ChessGame {
         }
 
         ChessGame {
-            board,
+            chessboard: board,
             side_to_move: if side_str == "w" {
                 Color::White
             } else {
@@ -126,7 +126,7 @@ impl ChessGame {
 
             for file in 0..8 {
                 let sq = ChessSquare::from_coords(file, rank).unwrap();
-                if let Some(ChessPiece { color, piece_type }) = self.board.get_piece_at(sq) {
+                if let Some(ChessPiece { color, piece_type }) = self.chessboard.get_piece_at(sq) {
                     if empty > 0 {
                         fen.push_str(&empty.to_string());
                         empty = 0;
@@ -237,7 +237,7 @@ impl ChessGame {
         let to_sq = mov.to;
         let opponent = self.side_to_move.opposite();
 
-        let Some(from_piece) = self.board.get_piece_at(from_sq) else {
+        let Some(from_piece) = self.chessboard.get_piece_at(from_sq) else {
             return Err("No piece selected");
         };
 
@@ -245,7 +245,7 @@ impl ChessGame {
             return Err("Opponent Piece Selected");
         }
 
-        if let Some(to_piece) = self.board.get_piece_at(to_sq) {
+        if let Some(to_piece) = self.chessboard.get_piece_at(to_sq) {
             if to_piece.color == self.side_to_move {
                 return Err("Ally piece targeted");
             }
@@ -263,7 +263,7 @@ impl ChessGame {
 
                 if file_diff == 0 {
                     if rank_diff == direction {
-                        if self.board.all_pieces.is_set(to_sq) {
+                        if self.chessboard.all_pieces.is_set(to_sq) {
                             return Err("Pawn blocked");
                         }
                     } else if rank_diff == 2 * direction {
@@ -271,8 +271,8 @@ impl ChessGame {
                             return Err("Invalid double push rank");
                         }
                         let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
-                        if self.board.all_pieces.is_set(to_sq)
-                            || self.board.all_pieces.is_set(mid_sq)
+                        if self.chessboard.all_pieces.is_set(to_sq)
+                            || self.chessboard.all_pieces.is_set(mid_sq)
                         {
                             return Err("Pawn blocked");
                         }
@@ -287,8 +287,8 @@ impl ChessGame {
 
                     if !is_ep {
                         let target_occupancy = match self.side_to_move {
-                            Color::White => self.board.black_occupancy,
-                            Color::Black => self.board.white_occupancy,
+                            Color::White => self.chessboard.black_occupancy,
+                            Color::Black => self.chessboard.white_occupancy,
                         };
 
                         if !target_occupancy.is_set(to_sq) {
@@ -307,7 +307,7 @@ impl ChessGame {
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
                     .ok_or("Logic Error: Rook aligned but no BETWEEN mask")?;
 
-                if !(ray_board & self.board.all_pieces).is_empty() {
+                if !(ray_board & self.chessboard.all_pieces).is_empty() {
                     return Err("Rook Move Blocked");
                 }
             }
@@ -319,7 +319,7 @@ impl ChessGame {
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
                     .ok_or("Logic Error: Bishop aligned but no BETWEEN mask")?;
 
-                if !(ray_board & self.board.all_pieces).is_empty() {
+                if !(ray_board & self.chessboard.all_pieces).is_empty() {
                     return Err("Bishop Move Blocked");
                 }
             }
@@ -341,7 +341,7 @@ impl ChessGame {
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
                     .ok_or("Logic Error: Queen aligned but no BETWEEN mask")?;
 
-                if !(ray_board & self.board.all_pieces).is_empty() {
+                if !(ray_board & self.chessboard.all_pieces).is_empty() {
                     return Err("Queen Move Blocked");
                 }
             }
@@ -352,7 +352,7 @@ impl ChessGame {
                     let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
                         .ok_or("Invalid King Move")?;
 
-                    if !(self.board.all_pieces & between).is_empty() {
+                    if !(self.chessboard.all_pieces & between).is_empty() {
                         return Err("Castling path blocked");
                     }
 
@@ -362,7 +362,7 @@ impl ChessGame {
                         } else {
                             ChessSquare::B8
                         };
-                        if self.board.all_pieces.is_set(b_file_sq) {
+                        if self.chessboard.all_pieces.is_set(b_file_sq) {
                             return Err("Queenside castle blocked");
                         }
                     }
@@ -379,13 +379,13 @@ impl ChessGame {
                         return Err("No castling rights");
                     }
 
-                    if self.is_square_attacked(from_sq, opponent) {
+                    if self.chessboard.is_square_attacked(from_sq, opponent) {
                         return Err("Cannot castle out of check");
                     }
-                    if self.is_square_attacked(crossing_sq, opponent) {
+                    if self.chessboard.is_square_attacked(crossing_sq, opponent) {
                         return Err("Cannot castle through check");
                     }
-                    if self.is_square_attacked(to_sq, opponent) {
+                    if self.chessboard.is_square_attacked(to_sq, opponent) {
                         return Err("Cannot castle into check");
                     }
                 }
@@ -393,15 +393,13 @@ impl ChessGame {
         }
 
         if legal {
-            let mut temp_board = self.clone();
-            temp_board.make_move(mov);
+            let mut temp_board = self.chessboard.clone();
+            temp_board.make_move(&mov, self.side_to_move, self.en_passant);
 
-            let our_color = self.side_to_move;
+            let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
+            let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);
 
-            let king_bitboard = self.board.pieces[our_color as usize][PieceType::King as usize];
-            let king_sq = ChessSquare(king_bitboard.0.trailing_zeros() as u8);
-
-            if self.is_square_attacked(king_sq, opponent) {
+            if temp_board.is_square_attacked(king_sq, opponent) {
                 return Err("Move leaves King in check");
             }
         }
@@ -409,12 +407,12 @@ impl ChessGame {
         Ok(())
     }
 
-    pub fn make_move(&mut self, mv: &ChessMove) {
-        let moving_piece = self.board.get_piece_at(mv.from).expect("No piece selected");
-        let mut captured_piece = self.board.get_piece_at(mv.to);
+    pub fn make_move(&mut self, mov: &ChessMove) {
+        let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece selected");
+        let mut captured_piece = self.chessboard.get_piece_at(mov.to);
 
         let is_en_passant = moving_piece.piece_type == PieceType::Pawn
-            && self.en_passant.is_some_and(|sq| sq == mv.to);
+            && self.en_passant.is_some_and(|sq| sq == mov.to);
 
         if is_en_passant {
             captured_piece = Some(ChessPiece {
@@ -424,7 +422,7 @@ impl ChessGame {
         }
 
         self.game_history.push(GameStateEntry {
-            move_made: mv.clone(),
+            move_made: mov.clone(),
             side_to_move: self.side_to_move,
             captured_piece,
             castling_rights: self.castling_rights,
@@ -434,44 +432,22 @@ impl ChessGame {
             zobrist_hash: 0, // TODO
         });
 
-        self.board.move_piece(mv.from, mv.to, moving_piece);
-
-        if let Some(promo_piece_type) = mv.promotion {
-            self.board.remove_piece(moving_piece, mv.to);
-            let new_piece = ChessPiece {
-                color: self.side_to_move,
-                piece_type: promo_piece_type,
-            };
-            self.board.add_piece(new_piece, mv.to);
-        }
-
-        if is_en_passant {
-            let captured_square = if self.side_to_move == Color::White {
-                ChessSquare(mv.to.0 - 8)
-            } else {
-                ChessSquare(mv.to.0 + 8)
-            };
-            let captured_pawn = ChessPiece {
-                color: self.side_to_move.opposite(),
-                piece_type: PieceType::Pawn,
-            };
-            self.board.remove_piece(captured_pawn, captured_square);
-        }
+        self.chessboard.make_move(mov, self.side_to_move, self.en_passant);
 
         if moving_piece.piece_type == PieceType::King
-            && (mv.from.file() as i8 - mv.to.file() as i8).abs() == 2
+            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2
         {
-            let (rook_from, rook_to) = match (self.side_to_move, mv.to.file()) {
-                (Color::White, f) if f > mv.from.file() => (ChessSquare::H1, ChessSquare::F1),
+            let (rook_from, rook_to) = match (self.side_to_move, mov.to.file()) {
+                (Color::White, f) if f > mov.from.file() => (ChessSquare::H1, ChessSquare::F1),
                 (Color::White, _) => (ChessSquare::A1, ChessSquare::D1),
-                (Color::Black, f) if f > mv.from.file() => (ChessSquare::H8, ChessSquare::F8),
+                (Color::Black, f) if f > mov.from.file() => (ChessSquare::H8, ChessSquare::F8),
                 (Color::Black, _) => (ChessSquare::A8, ChessSquare::D8),
             };
             let rook = ChessPiece {
                 color: self.side_to_move,
                 piece_type: PieceType::Rook,
             };
-            self.board.move_piece(rook_from, rook_to, rook);
+            self.chessboard.move_piece(rook_from, rook_to, rook);
         }
 
         let mut rights_to_remove = CastlingRights::empty();
@@ -489,7 +465,7 @@ impl ChessGame {
             }
         }
 
-        match mv.from {
+        match mov.from {
             ChessSquare::H1 => rights_to_remove |= CastlingRights::WHITE_KINGSIDE,
             ChessSquare::A1 => rights_to_remove |= CastlingRights::WHITE_QUEENSIDE,
             ChessSquare::H8 => rights_to_remove |= CastlingRights::BLACK_KINGSIDE,
@@ -497,7 +473,7 @@ impl ChessGame {
             _ => {}
         }
 
-        match mv.to {
+        match mov.to {
             ChessSquare::H1 => rights_to_remove |= CastlingRights::WHITE_KINGSIDE,
             ChessSquare::A1 => rights_to_remove |= CastlingRights::WHITE_QUEENSIDE,
             ChessSquare::H8 => rights_to_remove |= CastlingRights::BLACK_KINGSIDE,
@@ -509,9 +485,9 @@ impl ChessGame {
 
         self.en_passant = None;
         if moving_piece.piece_type == PieceType::Pawn
-            && (mv.from.rank() as i8 - mv.to.rank() as i8).abs() == 2
+            && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2
         {
-            let skipped_square = ChessSquare((mv.from.0 + mv.to.0) / 2);
+            let skipped_square = ChessSquare((mov.from.0 + mov.to.0) / 2);
             self.en_passant = Some(skipped_square);
         }
 
@@ -539,19 +515,19 @@ impl ChessGame {
         self.fullmove_counter = entry.fullmove_counter;
 
         let current_piece = self
-            .board
+            .chessboard
             .get_piece_at(mov.to)
             .expect("Board desync: Piece missing on unmake");
 
         if mov.promotion.is_some() {
-            self.board.remove_piece(current_piece, mov.to);
+            self.chessboard.remove_piece(current_piece, mov.to);
             let pawn = ChessPiece {
                 color: self.side_to_move,
                 piece_type: PieceType::Pawn,
             };
-            self.board.add_piece(pawn, mov.from);
+            self.chessboard.add_piece(pawn, mov.from);
         } else {
-            self.board.move_piece(mov.to, mov.from, current_piece);
+            self.chessboard.move_piece(mov.to, mov.from, current_piece);
         }
 
         if let Some(cap_piece) = entry.captured_piece {
@@ -561,7 +537,7 @@ impl ChessGame {
                 cap_sq = ChessSquare::from_coords(mov.to.file(), mov.from.rank()).unwrap();
             }
 
-            self.board.add_piece(cap_piece, cap_sq);
+            self.chessboard.add_piece(cap_piece, cap_sq);
         }
 
         if current_piece.piece_type == PieceType::King
@@ -576,10 +552,10 @@ impl ChessGame {
             };
 
             let rook = self
-                .board
+                .chessboard
                 .get_piece_at(rook_now)
                 .expect("Rook missing in un-castle");
-            self.board.move_piece(rook_now, rook_orig, rook);
+            self.chessboard.move_piece(rook_now, rook_orig, rook);
         }
     }
 }
