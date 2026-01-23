@@ -1,4 +1,4 @@
-use super::{Bitboard, ChessPiece, ChessSquare, Color, PieceType};
+use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessBoard {
@@ -366,6 +366,54 @@ impl ChessBoard {
     pub fn move_piece(&mut self, from_sq: ChessSquare, to_sq: ChessSquare, piece: ChessPiece) {
         self.remove_piece(piece, from_sq);
         self.add_piece(piece, to_sq);
+    }
+
+    pub fn make_move(
+        &mut self,
+        mov: &ChessMove,
+        side_to_move: Color,
+        en_passant_sq: Option<ChessSquare>,
+    ) {
+        let moving_piece = self.get_piece_at(mov.from).expect("No piece selected");
+        let is_en_passant = moving_piece.piece_type == PieceType::Pawn
+            && en_passant_sq.is_some_and(|sq| sq == mov.to);
+
+        if is_en_passant {
+            let cap_sq = if side_to_move == Color::White {
+                ChessSquare(mov.to.0 - 8)
+            } else {
+                ChessSquare(mov.to.0 + 8)
+            };
+            let captured_pawn = ChessPiece {
+                color: side_to_move.opposite(),
+                piece_type: PieceType::Pawn,
+            };
+            self.remove_piece(captured_pawn, cap_sq);
+        } else {
+            if let Some(cap_piece) = self.get_piece_at(mov.to) {
+                self.remove_piece(cap_piece, mov.to);
+            }
+        }
+
+        self.move_piece(mov.from, mov.to, moving_piece);
+
+        if let Some(promo_type) = mov.promotion {
+            self.remove_piece(moving_piece, mov.to);
+            self.add_piece(ChessPiece::new(side_to_move, promo_type), mov.to);
+        }
+
+        if moving_piece.piece_type == PieceType::King
+            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2
+        {
+            let (rook_from, rook_to) = match (side_to_move, mov.to.file()) {
+                (Color::White, f) if f > mov.from.file() => (ChessSquare::H1, ChessSquare::F1),
+                (Color::White, _) => (ChessSquare::A1, ChessSquare::D1),
+                (Color::Black, f) if f > mov.from.file() => (ChessSquare::H8, ChessSquare::F8),
+                (Color::Black, _) => (ChessSquare::A8, ChessSquare::D8),
+            };
+            let rook = ChessPiece::new(side_to_move, PieceType::Rook);
+            self.move_piece(rook_from, rook_to, rook);
+        }
     }
 
     pub fn get_piece_at(&self, square: ChessSquare) -> Option<ChessPiece> {
