@@ -4,6 +4,18 @@ use super::{
 use std::collections::{HashMap, btree_map::Keys};
 
 #[derive(Debug, Clone)]
+pub struct GameStateEntry {
+    pub move_made: ChessMove,
+    pub side_to_move: Color,
+    pub captured_piece: Option<ChessPiece>,
+    pub castling_rights: CastlingRights,
+    pub en_passant: Option<ChessSquare>,
+    pub halfmove_clock: u32,
+    pub fullmove_counter: u32,
+    pub zobrist_hash: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct ChessGame {
     pub board: ChessBoard,
     pub side_to_move: Color,
@@ -12,6 +24,7 @@ pub struct ChessGame {
     pub halfmove_clock: u32,
     pub fullmove_counter: u32,
     pub position_history: HashMap<u64, u32>,
+    pub game_history: Vec<GameStateEntry>,
 }
 
 impl Default for ChessGame {
@@ -101,6 +114,7 @@ impl ChessGame {
             halfmove_clock,
             fullmove_counter,
             position_history: HashMap::new(),
+            game_history: Vec::new(),
         }
     }
 
