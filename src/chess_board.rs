@@ -289,15 +289,8 @@ impl ChessBoard {
         let piece_idx = piece_type_to_index(piece.piece_type);
 
         self.pieces[color_idx][piece_idx].clear(square);
-
-        match piece.color {
-            Color::White => {
-                self.white_occupancy.clear(square);
-            }
-            Color::Black => {
-                self.black_occupancy.clear(square);
-            }
-        }
+        self.white_occupancy.clear(square);
+        self.black_occupancy.clear(square);
         self.all_pieces.clear(square);
     }
 
