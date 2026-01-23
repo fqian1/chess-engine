@@ -205,7 +205,34 @@ impl ChessGame {
         })
     }
 
-    pub fn validate_move(&mut self, mov: &ChessMove, legal: bool) -> Result<(), &str> {
+    pub fn fen_to_ascii(fen: &str) {
+        let mut board = String::new();
+        let rows = fen.split_whitespace().next().unwrap_or("").split('/');
+
+        for (rank_index, row) in rows.enumerate() {
+            let mut line = format!("{} ", 8 - rank_index);
+            for ch in row.chars() {
+                if ch.is_ascii_digit() {
+                    let empty = ch.to_digit(10).unwrap();
+                    line.push_str(&". ".repeat(empty as usize));
+                } else {
+                    line.push(ch);
+                    line.push(' ');
+                }
+            }
+            board.push_str(line.trim_end());
+            board.push('\n');
+        }
+
+        board.push_str("  a b c d e f g h\n");
+        print!("{board}");
+    }
+
+    // fn compute_position_hash(&self) -> u64 {
+
+    // }
+
+    pub fn validate_move(&self, mov: &ChessMove, legal: bool) -> Result<(), &str> {
         let from_sq = mov.from;
         let to_sq = mov.to;
         let opponent = self.side_to_move.opposite();
@@ -234,9 +261,7 @@ impl ChessGame {
                 let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
                 let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
 
-                if !(self.en_passant.is_some_and(|sq| sq == to_sq) && file_diff == 1) {
-                    return Err("Invalid en passant square");
-                } else if file_diff == 0 {
+                if file_diff == 0 {
                     if rank_diff == direction {
                         if self.board.all_pieces.is_set(to_sq) {
                             return Err("Pawn blocked");
@@ -254,25 +279,24 @@ impl ChessGame {
                     } else {
                         return Err("Invalid pawn move");
                     }
+                } else if file_diff == 1 {
+                    if rank_diff != direction {
+                        return Err("Invalid pawn capture direction");
+                    }
+                    let is_ep = self.en_passant.is_some_and(|sq| sq == to_sq);
+
+                    if !is_ep {
+                        let target_occupancy = match self.side_to_move {
+                            Color::White => self.board.black_occupancy,
+                            Color::Black => self.board.white_occupancy,
+                        };
+
+                        if !target_occupancy.is_set(to_sq) {
+                            return Err("Pawn cannot capture empty square");
+                        }
+                    }
                 } else {
-                    let pawn_attacks = if self.side_to_move == Color::White {
-                        ChessBoard::PAWN_ATTACKS_WHITE[from_sq.0 as usize]
-                    } else {
-                        ChessBoard::PAWN_ATTACKS_BLACK[from_sq.0 as usize]
-                    };
-
-                    if !pawn_attacks.is_set(to_sq) {
-                        return Err("Invalid pawn capture geometry");
-                    }
-
-                    let target_occupancy = match self.side_to_move {
-                        Color::White => self.board.black_occupancy,
-                        Color::Black => self.board.white_occupancy,
-                    };
-
-                    if !target_occupancy.is_set(to_sq) {
-                        return Err("Pawn cannot capture empty square");
-                    }
+                    return Err("Invalid pawn move");
                 }
             }
 
@@ -326,10 +350,21 @@ impl ChessGame {
                 if ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
                 } else {
                     let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
-                        .ok_or("Invalid King Move")?; // Not a castle or normal move
+                        .ok_or("Invalid King Move")?;
 
                     if !(self.board.all_pieces & between).is_empty() {
                         return Err("Castling path blocked");
+                    }
+
+                    if to_sq.file() == 2 {
+                        let b_file_sq = if to_sq.rank() == 0 {
+                            ChessSquare::B1
+                        } else {
+                            ChessSquare::B8
+                        };
+                        if self.board.all_pieces.is_set(b_file_sq) {
+                            return Err("Queenside castle blocked");
+                        }
                     }
 
                     let (rights_needed, crossing_sq) = match to_sq {
@@ -358,7 +393,8 @@ impl ChessGame {
         }
 
         if legal {
-            self.make_move(mov);
+            let mut temp_board = self.clone();
+            temp_board.make_move(mov);
 
             let our_color = self.side_to_move;
 
@@ -368,76 +404,19 @@ impl ChessGame {
             if self.is_square_attacked(king_sq, opponent) {
                 return Err("Move leaves King in check");
             }
-            self.unmake_move();
         }
 
         Ok(())
     }
 
-    pub fn is_square_attacked(&self, sq: ChessSquare, attacker_color: Color) -> bool {
-        let enemy_pieces = &self.board.pieces[attacker_color as usize];
-        let all_pieces = self.board.all_pieces;
-
-        let incoming_pawn_mask = match attacker_color {
-            Color::White => ChessBoard::PAWN_ATTACKS_BLACK[sq.0 as usize],
-            Color::Black => ChessBoard::PAWN_ATTACKS_WHITE[sq.0 as usize],
-        };
-
-        if !(incoming_pawn_mask
-            & self.board.pieces[attacker_color as usize][PieceType::Pawn as usize])
-            .is_empty()
-        {
-            return true;
-        }
-
-        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize])
-            .is_empty()
-        {
-            return true;
-        }
-
-        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize])
-            .is_empty()
-        {
-            return true;
-        }
-
-        let mut diagonal_attackers = (enemy_pieces[PieceType::Bishop as usize]
-            | enemy_pieces[PieceType::Queen as usize])
-            & ChessBoard::BISHOP_ATTACKS[sq.0 as usize];
-
-        while let Some(attacker_sq) = diagonal_attackers.pop_lsb() {
-            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
-            if (path & all_pieces).is_empty() {
-                return true;
-            }
-        }
-
-        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize]
-            | enemy_pieces[PieceType::Queen as usize])
-            & ChessBoard::ROOK_ATTACKS[sq.0 as usize];
-
-        while let Some(attacker_sq) = straight_attackers.pop_lsb() {
-            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
-            if (path & all_pieces).is_empty() {
-                return true;
-            }
-        }
-
-        false
-    }
-
     pub fn make_move(&mut self, mv: &ChessMove) {
-        let moving_piece = self
-            .board
-            .get_piece_at(mv.from)
-            .expect("make_move called with no piece at 'from' square");
-
+        let moving_piece = self.board.get_piece_at(mv.from).expect("No piece selected");
         let mut captured_piece = self.board.get_piece_at(mv.to);
 
-        if moving_piece.piece_type == PieceType::Pawn
-            && self.en_passant.is_some_and(|sq| sq == mv.to)
-        {
+        let is_en_passant = moving_piece.piece_type == PieceType::Pawn
+            && self.en_passant.is_some_and(|sq| sq == mv.to);
+
+        if is_en_passant {
             captured_piece = Some(ChessPiece {
                 color: self.side_to_move.opposite(),
                 piece_type: PieceType::Pawn,
@@ -466,10 +445,7 @@ impl ChessGame {
             self.board.add_piece(new_piece, mv.to);
         }
 
-        if moving_piece.piece_type == PieceType::Pawn
-            && mv.from.file() != mv.to.file()
-            && captured_piece.is_none()
-        {
+        if is_en_passant {
             let captured_square = if self.side_to_move == Color::White {
                 ChessSquare(mv.to.0 - 8)
             } else {
@@ -606,31 +582,4 @@ impl ChessGame {
             self.board.move_piece(rook_now, rook_orig, rook);
         }
     }
-
-    pub fn fen_to_ascii(fen: &str) {
-        let mut board = String::new();
-        let rows = fen.split_whitespace().next().unwrap_or("").split('/');
-
-        for (rank_index, row) in rows.enumerate() {
-            let mut line = format!("{} ", 8 - rank_index);
-            for ch in row.chars() {
-                if ch.is_ascii_digit() {
-                    let empty = ch.to_digit(10).unwrap();
-                    line.push_str(&". ".repeat(empty as usize));
-                } else {
-                    line.push(ch);
-                    line.push(' ');
-                }
-            }
-            board.push_str(line.trim_end());
-            board.push('\n');
-        }
-
-        board.push_str("  a b c d e f g h\n");
-        print!("{board}");
-    }
-
-    // fn compute_position_hash(&self) -> u64 {
-
-    // }
 }
