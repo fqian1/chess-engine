@@ -139,6 +139,58 @@ impl ChessBoard {
         attacks
     }
 
+    pub fn is_square_attacked(&self, sq: ChessSquare, attacker_color: Color) -> bool {
+        let enemy_pieces = &self.pieces[attacker_color as usize];
+        let all_pieces = self.all_pieces;
+
+        let incoming_pawn_mask = match attacker_color {
+            Color::White => ChessBoard::PAWN_ATTACKS_BLACK[sq.0 as usize],
+            Color::Black => ChessBoard::PAWN_ATTACKS_WHITE[sq.0 as usize],
+        };
+
+        if !(incoming_pawn_mask & self.pieces[attacker_color as usize][PieceType::Pawn as usize])
+            .is_empty()
+        {
+            return true;
+        }
+
+        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize])
+            .is_empty()
+        {
+            return true;
+        }
+
+        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize])
+            .is_empty()
+        {
+            return true;
+        }
+
+        let mut diagonal_attackers = (enemy_pieces[PieceType::Bishop as usize]
+            | enemy_pieces[PieceType::Queen as usize])
+            & ChessBoard::BISHOP_ATTACKS[sq.0 as usize];
+
+        while let Some(attacker_sq) = diagonal_attackers.pop_lsb() {
+            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
+            if (path & all_pieces).is_empty() {
+                return true;
+            }
+        }
+
+        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize]
+            | enemy_pieces[PieceType::Queen as usize])
+            & ChessBoard::ROOK_ATTACKS[sq.0 as usize];
+
+        while let Some(attacker_sq) = straight_attackers.pop_lsb() {
+            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
+            if (path & all_pieces).is_empty() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     const fn generate_black_pawn_attacks() -> [Bitboard; 64] {
         let mut attacks = [Bitboard::EMPTY; 64];
 
