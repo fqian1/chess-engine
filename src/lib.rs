@@ -6,6 +6,7 @@ pub mod chess_game;
 pub mod chess_move;
 pub mod chess_piece;
 pub mod chess_square;
+pub mod zobrist;
 
 #[doc(inline)]
 pub use bitboard::Bitboard;
@@ -21,3 +22,5 @@ pub use chess_move::ChessMove;
 pub use chess_piece::{ChessPiece, Color, PieceType};
 #[doc(inline)]
 pub use chess_square::ChessSquare;
+#[doc(inline)]
+pub use zobrist::{ZobristKeys};
