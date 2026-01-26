@@ -3,6 +3,11 @@ use super::{
 };
 use std::collections::{HashMap, btree_map::Keys};
 
+pub enum Outcome {
+    Unfinished,
+    Finished(Option<Color>)
+}
+
 #[derive(Debug, Clone)]
 pub struct GameStateEntry {
     pub move_made: ChessMove,
@@ -261,6 +266,31 @@ impl ChessGame {
                 let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
                 let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
 
+                match self.side_to_move {
+                    Color::White => {
+                        if mov.to.rank() != 7 && mov.promotion.is_some() {
+                            return Err("Cannot promote before reaching final rank");
+                        }
+                        if mov.to.rank() == 7
+                            && (mov.promotion.is_none()
+                                || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+                        {
+                            return Err("Invalid promotion");
+                        }
+                    }
+                    Color::Black => {
+                        if mov.to.rank() != 0 && mov.promotion.is_some() {
+                            return Err("Cannot promote before reaching final rank");
+                        }
+                        if mov.to.rank() == 0
+                            && (mov.promotion.is_none()
+                                || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+                        {
+                            return Err("Invalid promotion");
+                        }
+                    }
+                }
+
                 if file_diff == 0 {
                     if rank_diff == direction {
                         if self.chessboard.all_pieces.is_set(to_sq) {
@@ -352,6 +382,10 @@ impl ChessGame {
                     let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
                         .ok_or("Invalid King Move")?;
 
+                    if self.chessboard.all_pieces.is_set(to_sq) {
+                        return Err("Cannot castle into occupied square");
+                    }
+
                     if !(self.chessboard.all_pieces & between).is_empty() {
                         return Err("Castling path blocked");
                     }
@@ -408,7 +442,10 @@ impl ChessGame {
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
-        let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece selected");
+        let moving_piece = self
+            .chessboard
+            .get_piece_at(mov.from)
+            .expect("No piece selected");
         let mut captured_piece = self.chessboard.get_piece_at(mov.to);
 
         let is_en_passant = moving_piece.piece_type == PieceType::Pawn
@@ -432,23 +469,8 @@ impl ChessGame {
             zobrist_hash: 0, // TODO
         });
 
-        self.chessboard.make_move(mov, self.side_to_move, self.en_passant);
-
-        if moving_piece.piece_type == PieceType::King
-            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2
-        {
-            let (rook_from, rook_to) = match (self.side_to_move, mov.to.file()) {
-                (Color::White, f) if f > mov.from.file() => (ChessSquare::H1, ChessSquare::F1),
-                (Color::White, _) => (ChessSquare::A1, ChessSquare::D1),
-                (Color::Black, f) if f > mov.from.file() => (ChessSquare::H8, ChessSquare::F8),
-                (Color::Black, _) => (ChessSquare::A8, ChessSquare::D8),
-            };
-            let rook = ChessPiece {
-                color: self.side_to_move,
-                piece_type: PieceType::Rook,
-            };
-            self.chessboard.move_piece(rook_from, rook_to, rook);
-        }
+        self.chessboard
+            .make_move(mov, self.side_to_move, self.en_passant);
 
         let mut rights_to_remove = CastlingRights::empty();
 
@@ -504,58 +526,56 @@ impl ChessGame {
         self.side_to_move = self.side_to_move.opposite();
     }
 
-    pub fn unmake_move(&mut self) {
-        let entry = self.game_history.pop().expect("No history to unmake");
-        let mov = entry.move_made;
-
-        self.side_to_move = entry.side_to_move;
-        self.castling_rights = entry.castling_rights;
-        self.en_passant = entry.en_passant;
-        self.halfmove_clock = entry.halfmove_clock;
-        self.fullmove_counter = entry.fullmove_counter;
-
-        let current_piece = self
+    pub fn is_game_over(&self) -> Outcome {
+        let black_king = self
             .chessboard
-            .get_piece_at(mov.to)
-            .expect("Board desync: Piece missing on unmake");
-
-        if mov.promotion.is_some() {
-            self.chessboard.remove_piece(current_piece, mov.to);
-            let pawn = ChessPiece {
-                color: self.side_to_move,
-                piece_type: PieceType::Pawn,
-            };
-            self.chessboard.add_piece(pawn, mov.from);
-        } else {
-            self.chessboard.move_piece(mov.to, mov.from, current_piece);
-        }
-
-        if let Some(cap_piece) = entry.captured_piece {
-            let mut cap_sq = mov.to;
-
-            if current_piece.piece_type == PieceType::Pawn && entry.en_passant == Some(mov.to) {
-                cap_sq = ChessSquare::from_coords(mov.to.file(), mov.from.rank()).unwrap();
-            }
-
-            self.chessboard.add_piece(cap_piece, cap_sq);
-        }
-
-        if current_piece.piece_type == PieceType::King
-            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2
-        {
-            let (rook_now, rook_orig) = match mov.to {
-                ChessSquare::G1 => (ChessSquare::F1, ChessSquare::H1),
-                ChessSquare::C1 => (ChessSquare::D1, ChessSquare::A1),
-                ChessSquare::G8 => (ChessSquare::F8, ChessSquare::H8),
-                ChessSquare::C8 => (ChessSquare::D8, ChessSquare::A8),
-                _ => panic!("Invalid castle unmake state"),
-            };
-
-            let rook = self
+            .get_piece_bitboard(Color::Black, PieceType::King);
+        let white_king = self
+            .chessboard
+            .get_piece_bitboard(Color::White, PieceType::King);
+        let knights = self
+            .chessboard
+            .get_piece_bitboard(Color::White, PieceType::Knight)
+            & self
                 .chessboard
-                .get_piece_at(rook_now)
-                .expect("Rook missing in un-castle");
-            self.chessboard.move_piece(rook_now, rook_orig, rook);
+                .get_piece_bitboard(Color::Black, PieceType::Knight);
+        let pawns = self
+            .chessboard
+            .get_piece_bitboard(Color::White, PieceType::Pawn)
+            & self
+                .chessboard
+                .get_piece_bitboard(Color::Black, PieceType::Pawn);
+        let bishops = self
+            .chessboard
+            .get_piece_bitboard(Color::White, PieceType::Bishop)
+            & self
+                .chessboard
+                .get_piece_bitboard(Color::Black, PieceType::Bishop);
+        let queens = self
+            .chessboard
+            .get_piece_bitboard(Color::White, PieceType::Queen)
+            & self
+                .chessboard
+                .get_piece_bitboard(Color::Black, PieceType::Queen);
+        let rooks = self
+            .chessboard
+            .get_piece_bitboard(Color::White, PieceType::Rook)
+            & self
+                .chessboard
+                .get_piece_bitboard(Color::Black, PieceType::Queen);
+
+        if white_king.is_empty() {
+            return Outcome::Finished(Some(Color::Black));
         }
+        if black_king.is_empty() {
+            return Outcome::Finished(Some(Color::White));
+        }
+        if !queens.is_empty() || !rooks.is_empty() {
+            return Outcome::Unfinished;
+        }
+        if knights.0.count_ones() <= 2 && bishops.is_empty() || bishops.0.count_ones() <= 1 && knights.is_empty() {
+            return Outcome::Finished(None)
+        }
+        return Outcome::Unfinished;
     }
 }
