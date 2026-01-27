@@ -428,7 +428,7 @@ impl ChessGame {
 
         if legal {
             let mut temp_board = self.chessboard.clone();
-            temp_board.make_move(&mov, self.side_to_move, self.en_passant);
+            temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
             let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
             let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);

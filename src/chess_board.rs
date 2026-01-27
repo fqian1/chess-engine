@@ -368,7 +368,7 @@ impl ChessBoard {
         self.add_piece(piece, to_sq);
     }
 
-    pub fn make_move(
+    pub fn apply_move(
         &mut self,
         mov: &ChessMove,
         side_to_move: Color,
