@@ -1,0 +1,4 @@
+use_small_heuristics = "Max"
+if_else_single_line = true
+chain_width = 90
+match_block_trailing_comma = false
