@@ -72,11 +72,7 @@ impl ChessGame {
                     file += c.to_digit(10).unwrap() as u8;
                 }
                 _ => {
-                    let color = if c.is_uppercase() {
-                        Color::White
-                    } else {
-                        Color::Black
-                    };
+                    let color = if c.is_uppercase() { Color::White } else { Color::Black };
 
                     let piece_type = match c {
                         'P' | 'p' => PieceType::Pawn,
@@ -143,11 +139,7 @@ impl ChessGame {
                         PieceType::King => 'k',
                     };
 
-                    fen.push(if color == Color::White {
-                        c.to_ascii_uppercase()
-                    } else {
-                        c
-                    });
+                    fen.push(if color == Color::White { c.to_ascii_uppercase() } else { c });
                 } else {
                     empty += 1;
                 }
@@ -162,11 +154,7 @@ impl ChessGame {
         }
 
         fen.push(' ');
-        fen.push(if self.side_to_move == Color::White {
-            'w'
-        } else {
-            'b'
-        });
+        fen.push(if self.side_to_move == Color::White { 'w' } else { 'b' });
         fen.push(' ');
         fen.push_str(&self.castling_rights.to_fen());
         fen.push(' ');
@@ -200,11 +188,7 @@ impl ChessGame {
             None
         };
 
-        Ok(ChessMove {
-            from: from_sq,
-            to: to_sq,
-            promotion: promoted_type,
-        })
+        Ok(ChessMove { from: from_sq, to: to_sq, promotion: promoted_type })
     }
 
     pub fn fen_to_ascii(fen: &str) {
@@ -409,11 +393,8 @@ impl ChessGame {
                     }
 
                     if to_sq.file() == 2 {
-                        let b_file_sq = if to_sq.rank() == 0 {
-                            ChessSquare::B1
-                        } else {
-                            ChessSquare::B8
-                        };
+                        let b_file_sq =
+                            if to_sq.rank() == 0 { ChessSquare::B1 } else { ChessSquare::B8 };
                         if self.chessboard.all_pieces.is_set(b_file_sq) {
                             return Err("Queenside castle blocked");
                         }
