@@ -550,46 +550,39 @@ impl ChessGame {
             self.fullmove_counter += 1;
         }
 
+        // Apply move needs ep square we just pushed
+        let prev_ep = self.game_history.last().unwrap().en_passant;
+        self.chessboard.apply_move(mov, self.side_to_move, prev_ep);
+
         self.side_to_move = self.side_to_move.opposite();
+
+        // Hash global state
+        self.zobrist_hash ^= keys.castling[self.castling_rights.0 as usize];
+        if let Some(ep) = self.en_passant {
+            self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
+        }
     }
 
     pub fn is_game_over(&self) -> Outcome {
-        let black_king = self
-            .chessboard
-            .get_piece_bitboard(Color::Black, PieceType::King);
-        let white_king = self
-            .chessboard
-            .get_piece_bitboard(Color::White, PieceType::King);
-        let knights = self
-            .chessboard
-            .get_piece_bitboard(Color::White, PieceType::Knight)
-            & self
-                .chessboard
-                .get_piece_bitboard(Color::Black, PieceType::Knight);
-        let pawns = self
-            .chessboard
-            .get_piece_bitboard(Color::White, PieceType::Pawn)
-            & self
-                .chessboard
-                .get_piece_bitboard(Color::Black, PieceType::Pawn);
-        let bishops = self
-            .chessboard
-            .get_piece_bitboard(Color::White, PieceType::Bishop)
-            & self
-                .chessboard
-                .get_piece_bitboard(Color::Black, PieceType::Bishop);
-        let queens = self
-            .chessboard
-            .get_piece_bitboard(Color::White, PieceType::Queen)
-            & self
-                .chessboard
-                .get_piece_bitboard(Color::Black, PieceType::Queen);
-        let rooks = self
-            .chessboard
-            .get_piece_bitboard(Color::White, PieceType::Rook)
-            & self
-                .chessboard
-                .get_piece_bitboard(Color::Black, PieceType::Queen);
+        if self.halfmove_clock >= 100 {
+            return Outcome::Finished(None);
+        }
+
+        let repetition_count = self.game_history
+            .iter()
+            .filter(|entry| entry.zobrist_hash == self.zobrist_hash)
+            .count();
+
+        if repetition_count >= 2 {
+            return Outcome::Finished(None);
+        }
+
+        if self.is_insufficient_material() {
+            return Outcome::Finished(None);
+        }
+
+        let white_king = self.chessboard.get_piece_bitboard(Color::White, PieceType::King);
+        let black_king = self.chessboard.get_piece_bitboard(Color::Black, PieceType::King);
 
         if white_king.is_empty() {
             return Outcome::Finished(Some(Color::Black));
@@ -597,12 +590,26 @@ impl ChessGame {
         if black_king.is_empty() {
             return Outcome::Finished(Some(Color::White));
         }
-        if !queens.is_empty() || !rooks.is_empty() {
-            return Outcome::Unfinished;
+
+        Outcome::Unfinished
+    }
+
+    fn is_insufficient_material(&self) -> bool {
+        let all_pieces = self.chessboard.all_pieces;
+        let count = all_pieces.count();
+
+        if count == 2 { return true; }
+
+        if count == 3 {
+            let white_minors = self.chessboard.get_piece_bitboard(Color::White, PieceType::Knight)
+                | self.chessboard.get_piece_bitboard(Color::White, PieceType::Bishop);
+            let black_minors = self.chessboard.get_piece_bitboard(Color::Black, PieceType::Knight)
+                | self.chessboard.get_piece_bitboard(Color::Black, PieceType::Bishop);
+
+            if !white_minors.is_empty() || !black_minors.is_empty() {
+                return true;
+            }
         }
-        if knights.0.count_ones() <= 2 && bishops.is_empty() || bishops.0.count_ones() <= 1 && knights.is_empty() {
-            return Outcome::Finished(None)
-        }
-        return Outcome::Unfinished;
+        false
     }
 }
