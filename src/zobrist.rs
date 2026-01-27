@@ -25,6 +25,7 @@ impl XorShift64 {
 }
 
 pub struct ZobristKeys {
+    // [color][piece][square]
     pub pieces: [[[u64; 64]; 6]; 2],
     pub castling: [u64; 16],
     pub en_passant: [u64; 8],
@@ -32,7 +33,7 @@ pub struct ZobristKeys {
 }
 
 impl ZobristKeys {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut rng = XorShift64::new(123456789);
 
         let mut pieces = [[[0; 64]; 6]; 2];
@@ -61,6 +62,8 @@ impl ZobristKeys {
             side_to_move: rng.next(),
         }
     }
+    pub fn get() -> &'static Self {
+        static INSTANCE: OnceLock<ZobristKeys> = OnceLock::new();
+        INSTANCE.get_or_init(|| Self::new())
+    }
 }
-
-static ZOBRIST_KEYS: OnceLock<ZobristKeys> = OnceLock::new();

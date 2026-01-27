@@ -23,4 +23,4 @@ pub use chess_piece::{ChessPiece, Color, PieceType};
 #[doc(inline)]
 pub use chess_square::ChessSquare;
 #[doc(inline)]
-pub use zobrist::{ZobristKeys};
+pub use zobrist::ZobristKeys;

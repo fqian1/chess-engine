@@ -1,11 +1,12 @@
 use super::{
     Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType,
+    ZobristKeys,
 };
 use std::collections::{HashMap, btree_map::Keys};
 
 pub enum Outcome {
     Unfinished,
-    Finished(Option<Color>)
+    Finished(Option<Color>),
 }
 
 #[derive(Debug, Clone)]
@@ -28,8 +29,8 @@ pub struct ChessGame {
     pub en_passant: Option<ChessSquare>,
     pub halfmove_clock: u32,
     pub fullmove_counter: u32,
-    pub position_history: HashMap<u64, u32>,
     pub game_history: Vec<GameStateEntry>,
+    pub zobrist_hash: u64,
 }
 
 impl Default for ChessGame {
@@ -109,17 +110,13 @@ impl ChessGame {
 
         ChessGame {
             chessboard: board,
-            side_to_move: if side_str == "w" {
-                Color::White
-            } else {
-                Color::Black
-            },
+            side_to_move: if side_str == "w" { Color::White } else { Color::Black },
             castling_rights: CastlingRights::from_fen(castling_str),
             en_passant,
             halfmove_clock,
             fullmove_counter,
-            position_history: HashMap::new(),
             game_history: Vec::new(),
+            zobrist_hash: 0,
         }
     }
 
@@ -233,9 +230,30 @@ impl ChessGame {
         print!("{board}");
     }
 
-    // fn compute_position_hash(&self) -> u64 {
+    pub fn make_initial_hash(&mut self) {
+        let mut hash = 0;
+        let keys = ZobristKeys::get();
 
-    // }
+        for sq_idx in 0..64 {
+            let sq = ChessSquare(sq_idx);
+            if let Some(piece) = self.chessboard.get_piece_at(sq) {
+                hash ^=
+                    keys.pieces[piece.color as usize][piece.piece_type as usize][sq_idx as usize];
+            }
+        }
+
+        hash ^= keys.castling[self.castling_rights.0 as usize];
+
+        if let Some(sq) = self.en_passant {
+            hash ^= keys.en_passant[sq.file() as usize];
+        }
+
+        if self.side_to_move == Color::Black {
+            hash ^= keys.side_to_move;
+        }
+
+        self.zobrist_hash = hash;
+    }
 
     pub fn validate_move(&self, mov: &ChessMove, legal: bool) -> Result<(), &str> {
         let from_sq = mov.from;
@@ -442,77 +460,105 @@ impl ChessGame {
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
-        let moving_piece = self
-            .chessboard
-            .get_piece_at(mov.from)
-            .expect("No piece selected");
-        let mut captured_piece = self.chessboard.get_piece_at(mov.to);
+        let keys = ZobristKeys::get();
+        let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
+        let captured_piece = self.chessboard.get_piece_at(mov.to);
 
         let is_en_passant = moving_piece.piece_type == PieceType::Pawn
             && self.en_passant.is_some_and(|sq| sq == mov.to);
-
-        if is_en_passant {
-            captured_piece = Some(ChessPiece {
-                color: self.side_to_move.opposite(),
-                piece_type: PieceType::Pawn,
-            });
-        }
+        let is_castling = moving_piece.piece_type == PieceType::King
+            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2;
 
         self.game_history.push(GameStateEntry {
             move_made: mov.clone(),
             side_to_move: self.side_to_move,
-            captured_piece,
+            captured_piece: if is_en_passant {
+                Some(ChessPiece::new(self.side_to_move.opposite(), PieceType::Pawn))
+            } else {
+                captured_piece
+            },
             castling_rights: self.castling_rights,
             en_passant: self.en_passant,
             halfmove_clock: self.halfmove_clock,
             fullmove_counter: self.fullmove_counter,
-            zobrist_hash: 0, // TODO
+            zobrist_hash: self.zobrist_hash,
         });
 
-        self.chessboard
-            .make_move(mov, self.side_to_move, self.en_passant);
+        // Remove Old Global State from Hash
+        self.zobrist_hash ^= keys.castling[self.castling_rights.0 as usize];
+        if let Some(ep) = self.en_passant {
+            self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
+        }
+        self.zobrist_hash ^= keys.side_to_move;
 
+        // Remove Moving Piece from From
+        self.zobrist_hash ^= keys.pieces[moving_piece.color as usize]
+            [moving_piece.piece_type as usize][mov.from.0 as usize];
+
+        // Remove Captured Piece
+        if is_en_passant {
+            let cap_sq_idx = if self.side_to_move == Color::White { mov.to.0 - 8 } else { mov.to.0 + 8 };
+            self.zobrist_hash ^= keys.pieces[self.side_to_move.opposite() as usize]
+                [PieceType::Pawn as usize][cap_sq_idx as usize];
+        } else if let Some(cap) = captured_piece {
+            self.zobrist_hash ^= keys.pieces[cap.color as usize]
+                [cap.piece_type as usize][mov.to.0 as usize];
+        }
+
+        // Update Hash
+        // Add Moving Piece to Destination
+        let final_piece_type = mov.promotion.unwrap_or(moving_piece.piece_type);
+        self.zobrist_hash ^= keys.pieces[moving_piece.color as usize]
+            [final_piece_type as usize][mov.to.0 as usize];
+
+        // Handle Castling Rook
+        if is_castling {
+            let (rook_from, rook_to) = match (self.side_to_move, mov.to.file()) {
+                (Color::White, 6) => (ChessSquare::H1, ChessSquare::F1),
+                (Color::White, 2) => (ChessSquare::A1, ChessSquare::D1),
+                (Color::Black, 6) => (ChessSquare::H8, ChessSquare::F8),
+                (Color::Black, 2) => (ChessSquare::A8, ChessSquare::D8),
+                _ => unreachable!(),
+            };
+            // Remove Rook from corner
+            self.zobrist_hash ^= keys.pieces[self.side_to_move as usize]
+                [PieceType::Rook as usize][rook_from.0 as usize];
+            // Add Rook to new square
+            self.zobrist_hash ^= keys.pieces[self.side_to_move as usize]
+                [PieceType::Rook as usize][rook_to.0 as usize];
+        }
+
+        // Update Internal Game State
         let mut rights_to_remove = CastlingRights::empty();
-
         if moving_piece.piece_type == PieceType::King {
             match self.side_to_move {
-                Color::White => {
-                    rights_to_remove |=
-                        CastlingRights::WHITE_KINGSIDE | CastlingRights::WHITE_QUEENSIDE;
-                }
-                Color::Black => {
-                    rights_to_remove |=
-                        CastlingRights::BLACK_KINGSIDE | CastlingRights::BLACK_QUEENSIDE;
-                }
+                Color::White => rights_to_remove |= CastlingRights::WHITE_KINGSIDE | CastlingRights::WHITE_QUEENSIDE,
+                Color::Black => rights_to_remove |= CastlingRights::BLACK_KINGSIDE | CastlingRights::BLACK_QUEENSIDE,
             }
         }
-
-        match mov.from {
-            ChessSquare::H1 => rights_to_remove |= CastlingRights::WHITE_KINGSIDE,
-            ChessSquare::A1 => rights_to_remove |= CastlingRights::WHITE_QUEENSIDE,
-            ChessSquare::H8 => rights_to_remove |= CastlingRights::BLACK_KINGSIDE,
-            ChessSquare::A8 => rights_to_remove |= CastlingRights::BLACK_QUEENSIDE,
-            _ => {}
-        }
-
-        match mov.to {
-            ChessSquare::H1 => rights_to_remove |= CastlingRights::WHITE_KINGSIDE,
-            ChessSquare::A1 => rights_to_remove |= CastlingRights::WHITE_QUEENSIDE,
-            ChessSquare::H8 => rights_to_remove |= CastlingRights::BLACK_KINGSIDE,
-            ChessSquare::A8 => rights_to_remove |= CastlingRights::BLACK_QUEENSIDE,
-            _ => {}
-        }
-
+        let get_rights = |sq: ChessSquare| -> CastlingRights {
+            match sq {
+                ChessSquare::H1 => CastlingRights::WHITE_KINGSIDE,
+                ChessSquare::A1 => CastlingRights::WHITE_QUEENSIDE,
+                ChessSquare::H8 => CastlingRights::BLACK_KINGSIDE,
+                ChessSquare::A8 => CastlingRights::BLACK_QUEENSIDE,
+                _ => CastlingRights::empty(),
+            }
+        };
+        rights_to_remove |= get_rights(mov.from);
+        rights_to_remove |= get_rights(mov.to);
         self.castling_rights.remove(rights_to_remove);
 
+        // Update En Passant
         self.en_passant = None;
         if moving_piece.piece_type == PieceType::Pawn
             && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2
         {
-            let skipped_square = ChessSquare((mov.from.0 + mov.to.0) / 2);
-            self.en_passant = Some(skipped_square);
+            let skipped_rank = (mov.from.rank() + mov.to.rank()) / 2;
+            self.en_passant = ChessSquare::from_coords(mov.from.file(), skipped_rank);
         }
 
+        // Update Clocks
         if moving_piece.piece_type == PieceType::Pawn || captured_piece.is_some() {
             self.halfmove_clock = 0;
         } else {
