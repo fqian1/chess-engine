@@ -1,12 +1,20 @@
-use super::{
-    Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType,
-    ZobristKeys,
-};
-use std::collections::{HashMap, btree_map::Keys};
+use super::{CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
+
+pub enum MoveValidity {
+    Valid,
+    PseudoLegal(String), // Leaves king in check
+    Impossible(String),  // Geometry violation
+}
 
 pub enum Outcome {
     Unfinished,
     Finished(Option<Color>),
+}
+
+#[derive(Debug, Clone)]
+pub enum RuleSet {
+    Legal,
+    PseudoLegal,
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +27,7 @@ pub struct GameStateEntry {
     pub halfmove_clock: u32,
     pub fullmove_counter: u32,
     pub zobrist_hash: u64,
+    pub rule_set: RuleSet,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +40,7 @@ pub struct ChessGame {
     pub fullmove_counter: u32,
     pub game_history: Vec<GameStateEntry>,
     pub zobrist_hash: u64,
+    pub rule_set: RuleSet,
 }
 
 impl Default for ChessGame {
@@ -107,6 +117,7 @@ impl ChessGame {
             fullmove_counter,
             game_history: Vec::new(),
             zobrist_hash: 0,
+            rule_set: RuleSet::Legal,
         }
     }
 
