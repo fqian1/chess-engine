@@ -7,9 +7,7 @@ struct XorShift64 {
 impl XorShift64 {
     pub fn new(seed: u64) -> Self {
         if seed == 0 {
-            XorShift64 {
-                value: 0xDEADC0DEBAADF00D,
-            }
+            XorShift64 { value: 0xDEADC0DEBAADF00D }
         } else {
             XorShift64 { value: seed }
         }
@@ -55,12 +53,7 @@ impl ZobristKeys {
             en_passant[i] = rng.next();
         }
 
-        ZobristKeys {
-            pieces,
-            castling,
-            en_passant,
-            side_to_move: rng.next(),
-        }
+        ZobristKeys { pieces, castling, en_passant, side_to_move: rng.next() }
     }
     pub fn get() -> &'static Self {
         static INSTANCE: OnceLock<ZobristKeys> = OnceLock::new();

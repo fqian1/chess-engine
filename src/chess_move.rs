@@ -9,11 +9,7 @@ pub struct ChessMove {
 
 impl ChessMove {
     pub fn new(from: ChessSquare, to: ChessSquare) -> Self {
-        Self {
-            from,
-            to,
-            promotion: None,
-        }
+        Self { from, to, promotion: None }
     }
 
     pub fn from_uci(uci: &str) -> Result<Self, &'static str> {
@@ -34,11 +30,7 @@ impl ChessMove {
             None
         };
 
-        Ok(ChessMove {
-            from: from_sq.unwrap(),
-            to: to_sq.unwrap(),
-            promotion,
-        })
+        Ok(ChessMove { from: from_sq.unwrap(), to: to_sq.unwrap(), promotion })
     }
 
     pub fn to_uci(&self) -> String {

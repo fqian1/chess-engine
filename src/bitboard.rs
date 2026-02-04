@@ -38,8 +38,7 @@ impl Bitboard {
             | Bitboard::BLACK_KING.0,
     );
 
-    pub const ALL_PIECES: Bitboard =
-        Bitboard(Bitboard::BLACK_OCCUPANCY.0 | Bitboard::WHITE_OCCUPANCY.0);
+    pub const ALL_PIECES: Bitboard = Bitboard(Bitboard::BLACK_OCCUPANCY.0 | Bitboard::WHITE_OCCUPANCY.0);
 
     const FILE_A: u64 = 0x0101_0101_0101_0101;
     const FILE_H: u64 = 0x8080_8080_8080_8080;

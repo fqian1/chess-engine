@@ -46,16 +46,10 @@ impl ChessGame {
         let side_str = parts.next().expect("FEN missing side to move");
         let castling_str = parts.next().expect("FEN missing castling rights");
         let ep_str = parts.next().expect("FEN missing en passant square");
-        let halfmove_clock: u32 = parts
-            .next()
-            .expect("FEN missing halfmove clock")
-            .parse()
-            .expect("Invalid halfmove clock");
-        let fullmove_counter: u32 = parts
-            .next()
-            .expect("FEN missing fullmove counter")
-            .parse()
-            .expect("Invalid fullmove counter");
+        let halfmove_clock: u32 =
+            parts.next().expect("FEN missing halfmove clock").parse().expect("Invalid halfmove clock");
+        let fullmove_counter: u32 =
+            parts.next().expect("FEN missing fullmove counter").parse().expect("Invalid fullmove counter");
 
         let mut board_array = [None; 64];
 
@@ -139,7 +133,11 @@ impl ChessGame {
                         PieceType::King => 'k',
                     };
 
-                    fen.push(if color == Color::White { c.to_ascii_uppercase() } else { c });
+                    fen.push(if color == Color::White {
+                        c.to_ascii_uppercase()
+                    } else {
+                        c
+                    });
                 } else {
                     empty += 1;
                 }
@@ -274,8 +272,7 @@ impl ChessGame {
                             return Err("Cannot promote before reaching final rank");
                         }
                         if mov.to.rank() == 7
-                            && (mov.promotion.is_none()
-                                || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+                            && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
                         {
                             return Err("Invalid promotion");
                         }
@@ -285,8 +282,7 @@ impl ChessGame {
                             return Err("Cannot promote before reaching final rank");
                         }
                         if mov.to.rank() == 0
-                            && (mov.promotion.is_none()
-                                || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+                            && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
                         {
                             return Err("Invalid promotion");
                         }
@@ -303,9 +299,7 @@ impl ChessGame {
                             return Err("Invalid double push rank");
                         }
                         let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
-                        if self.chessboard.all_pieces.is_set(to_sq)
-                            || self.chessboard.all_pieces.is_set(mid_sq)
-                        {
+                        if self.chessboard.all_pieces.is_set(to_sq) || self.chessboard.all_pieces.is_set(mid_sq) {
                             return Err("Pawn blocked");
                         }
                     } else {
@@ -381,8 +375,8 @@ impl ChessGame {
             PieceType::King => {
                 if ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
                 } else {
-                    let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
-                        .ok_or("Invalid King Move")?;
+                    let between =
+                        ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].ok_or("Invalid King Move")?;
 
                     if self.chessboard.all_pieces.is_set(to_sq) {
                         return Err("Cannot castle into occupied square");
@@ -393,8 +387,11 @@ impl ChessGame {
                     }
 
                     if to_sq.file() == 2 {
-                        let b_file_sq =
-                            if to_sq.rank() == 0 { ChessSquare::B1 } else { ChessSquare::B8 };
+                        let b_file_sq = if to_sq.rank() == 0 {
+                            ChessSquare::B1
+                        } else {
+                            ChessSquare::B8
+                        };
                         if self.chessboard.all_pieces.is_set(b_file_sq) {
                             return Err("Queenside castle blocked");
                         }
@@ -445,10 +442,10 @@ impl ChessGame {
         let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
         let captured_piece = self.chessboard.get_piece_at(mov.to);
 
-        let is_en_passant = moving_piece.piece_type == PieceType::Pawn
-            && self.en_passant.is_some_and(|sq| sq == mov.to);
-        let is_castling = moving_piece.piece_type == PieceType::King
-            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2;
+        let is_en_passant =
+            moving_piece.piece_type == PieceType::Pawn && self.en_passant.is_some_and(|sq| sq == mov.to);
+        let is_castling =
+            moving_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2;
 
         self.game_history.push(GameStateEntry {
             move_made: mov.clone(),
@@ -473,24 +470,26 @@ impl ChessGame {
         self.zobrist_hash ^= keys.side_to_move;
 
         // Remove Moving Piece from From
-        self.zobrist_hash ^= keys.pieces[moving_piece.color as usize]
-            [moving_piece.piece_type as usize][mov.from.0 as usize];
+        self.zobrist_hash ^=
+            keys.pieces[moving_piece.color as usize][moving_piece.piece_type as usize][mov.from.0 as usize];
 
         // Remove Captured Piece
         if is_en_passant {
-            let cap_sq_idx = if self.side_to_move == Color::White { mov.to.0 - 8 } else { mov.to.0 + 8 };
-            self.zobrist_hash ^= keys.pieces[self.side_to_move.opposite() as usize]
-                [PieceType::Pawn as usize][cap_sq_idx as usize];
+            let cap_sq_idx = if self.side_to_move == Color::White {
+                mov.to.0 - 8
+            } else {
+                mov.to.0 + 8
+            };
+            self.zobrist_hash ^=
+                keys.pieces[self.side_to_move.opposite() as usize][PieceType::Pawn as usize][cap_sq_idx as usize];
         } else if let Some(cap) = captured_piece {
-            self.zobrist_hash ^= keys.pieces[cap.color as usize]
-                [cap.piece_type as usize][mov.to.0 as usize];
+            self.zobrist_hash ^= keys.pieces[cap.color as usize][cap.piece_type as usize][mov.to.0 as usize];
         }
 
         // Update Hash
         // Add Moving Piece to Destination
         let final_piece_type = mov.promotion.unwrap_or(moving_piece.piece_type);
-        self.zobrist_hash ^= keys.pieces[moving_piece.color as usize]
-            [final_piece_type as usize][mov.to.0 as usize];
+        self.zobrist_hash ^= keys.pieces[moving_piece.color as usize][final_piece_type as usize][mov.to.0 as usize];
 
         // Handle Castling Rook
         if is_castling {
@@ -502,11 +501,10 @@ impl ChessGame {
                 _ => unreachable!(),
             };
             // Remove Rook from corner
-            self.zobrist_hash ^= keys.pieces[self.side_to_move as usize]
-                [PieceType::Rook as usize][rook_from.0 as usize];
+            self.zobrist_hash ^=
+                keys.pieces[self.side_to_move as usize][PieceType::Rook as usize][rook_from.0 as usize];
             // Add Rook to new square
-            self.zobrist_hash ^= keys.pieces[self.side_to_move as usize]
-                [PieceType::Rook as usize][rook_to.0 as usize];
+            self.zobrist_hash ^= keys.pieces[self.side_to_move as usize][PieceType::Rook as usize][rook_to.0 as usize];
         }
 
         // Update Internal Game State
@@ -532,9 +530,7 @@ impl ChessGame {
 
         // Update En Passant
         self.en_passant = None;
-        if moving_piece.piece_type == PieceType::Pawn
-            && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2
-        {
+        if moving_piece.piece_type == PieceType::Pawn && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2 {
             let skipped_rank = (mov.from.rank() + mov.to.rank()) / 2;
             self.en_passant = ChessSquare::from_coords(mov.from.file(), skipped_rank);
         }
@@ -568,10 +564,7 @@ impl ChessGame {
             return Outcome::Finished(None);
         }
 
-        let repetition_count = self.game_history
-            .iter()
-            .filter(|entry| entry.zobrist_hash == self.zobrist_hash)
-            .count();
+        let repetition_count = self.game_history.iter().filter(|entry| entry.zobrist_hash == self.zobrist_hash).count();
 
         if repetition_count >= 2 {
             return Outcome::Finished(None);
@@ -594,11 +587,32 @@ impl ChessGame {
         Outcome::Unfinished
     }
 
+    fn is_checkmate(&self) -> bool {
+        let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move.opposite(), PieceType::King);
+        let king_sq = king_bb.pop_lsb().unwrap();
+        if !self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
+            return false;
+        }
+        let mut squares = ChessBoard::KING_ATTACKS[king_sq.0 as usize];
+        while let Some(square) = squares.pop_lsb() {
+            let occupancy = match self.side_to_move {
+                Color::White => self.chessboard.white_occupancy,
+                Color::Black => self.chessboard.black_occupancy,
+            };
+            if !self.chessboard.is_square_attacked(square, self.side_to_move) || (king_bb | occupancy).is_empty() {
+                return false;
+            }
+        }
+        return true;
+    }
+
     fn is_insufficient_material(&self) -> bool {
         let all_pieces = self.chessboard.all_pieces;
         let count = all_pieces.count();
 
-        if count == 2 { return true; }
+        if count == 2 {
+            return true;
+        }
 
         if count == 3 {
             let white_minors = self.chessboard.get_piece_bitboard(Color::White, PieceType::Knight)

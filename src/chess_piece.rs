@@ -84,7 +84,7 @@ impl PieceType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct ChessPiece {
-    pub color: Color,
+    pub color:      Color,
     pub piece_type: PieceType,
 }
 

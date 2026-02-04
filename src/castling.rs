@@ -46,7 +46,11 @@ impl CastlingRights {
         if self.has(Self::BLACK_QUEENSIDE) {
             s.push('q');
         }
-        if s.is_empty() { "-".to_string() } else { s }
+        if s.is_empty() {
+            "-".to_string()
+        } else {
+            s
+        }
     }
 
     pub fn has(&self, right: CastlingRights) -> bool {

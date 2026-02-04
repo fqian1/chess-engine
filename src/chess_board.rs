@@ -71,8 +71,7 @@ impl ChessBoard {
 
                         if nx >= 0 && nx < 8 && ny >= 0 && ny < 8 {
                             let target_square_index = (nx + ny * 8) as usize;
-                            current_square_attacks
-                                .set(ChessSquare::new(target_square_index as u8).unwrap());
+                            current_square_attacks.set(ChessSquare::new(target_square_index as u8).unwrap());
                         }
                     }
                     dy += 1;
@@ -105,8 +104,7 @@ impl ChessBoard {
 
                         if nx >= 0 && nx < 8 && ny >= 0 && ny < 8 {
                             let target_square_index = (nx + ny * 8) as usize;
-                            current_square_attacks
-                                .set(ChessSquare::new(target_square_index as u8).unwrap());
+                            current_square_attacks.set(ChessSquare::new(target_square_index as u8).unwrap());
                         }
                     }
                     dy += 1;
@@ -148,21 +146,15 @@ impl ChessBoard {
             Color::Black => ChessBoard::PAWN_ATTACKS_WHITE[sq.0 as usize],
         };
 
-        if !(incoming_pawn_mask & self.pieces[attacker_color as usize][PieceType::Pawn as usize])
-            .is_empty()
-        {
+        if !(incoming_pawn_mask & self.pieces[attacker_color as usize][PieceType::Pawn as usize]).is_empty() {
             return true;
         }
 
-        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize])
-            .is_empty()
-        {
+        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize]).is_empty() {
             return true;
         }
 
-        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize])
-            .is_empty()
-        {
+        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize]).is_empty() {
             return true;
         }
 
@@ -177,8 +169,7 @@ impl ChessBoard {
             }
         }
 
-        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize]
-            | enemy_pieces[PieceType::Queen as usize])
+        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize] | enemy_pieces[PieceType::Queen as usize])
             & ChessBoard::ROOK_ATTACKS[sq.0 as usize];
 
         while let Some(attacker_sq) = straight_attackers.pop_lsb() {
@@ -368,15 +359,9 @@ impl ChessBoard {
         self.add_piece(piece, to_sq);
     }
 
-    pub fn apply_move(
-        &mut self,
-        mov: &ChessMove,
-        side_to_move: Color,
-        en_passant_sq: Option<ChessSquare>,
-    ) {
+    pub fn apply_move(&mut self, mov: &ChessMove, side_to_move: Color, en_passant_sq: Option<ChessSquare>) {
         let moving_piece = self.get_piece_at(mov.from).expect("No piece selected");
-        let is_en_passant = moving_piece.piece_type == PieceType::Pawn
-            && en_passant_sq.is_some_and(|sq| sq == mov.to);
+        let is_en_passant = moving_piece.piece_type == PieceType::Pawn && en_passant_sq.is_some_and(|sq| sq == mov.to);
 
         if is_en_passant {
             let cap_sq = if side_to_move == Color::White {
@@ -384,10 +369,7 @@ impl ChessBoard {
             } else {
                 ChessSquare(mov.to.0 + 8)
             };
-            let captured_pawn = ChessPiece {
-                color: side_to_move.opposite(),
-                piece_type: PieceType::Pawn,
-            };
+            let captured_pawn = ChessPiece { color: side_to_move.opposite(), piece_type: PieceType::Pawn };
             self.remove_piece(captured_pawn, cap_sq);
         } else {
             if let Some(cap_piece) = self.get_piece_at(mov.to) {
@@ -402,9 +384,7 @@ impl ChessBoard {
             self.add_piece(ChessPiece::new(side_to_move, promo_type), mov.to);
         }
 
-        if moving_piece.piece_type == PieceType::King
-            && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2
-        {
+        if moving_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2 {
             let (rook_from, rook_to) = match (side_to_move, mov.to.file()) {
                 (Color::White, f) if f > mov.from.file() => (ChessSquare::H1, ChessSquare::F1),
                 (Color::White, _) => (ChessSquare::A1, ChessSquare::D1),
@@ -438,10 +418,7 @@ impl ChessBoard {
             if (self.pieces[color_idx][piece_idx].0 & square_bit.0) != 0 {
                 let piece_type = PieceType::from_idx(piece_idx);
                 if let Some(piece) = piece_type {
-                    return Some(ChessPiece {
-                        color,
-                        piece_type: piece,
-                    });
+                    return Some(ChessPiece { color, piece_type: piece });
                 }
             }
         }
