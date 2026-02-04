@@ -223,15 +223,30 @@ impl ChessGame {
         print!("{board}");
     }
 
-    pub fn make_initial_hash(&mut self) {
+    pub fn calculate_hash(&mut self) -> u64 {
         let mut hash = 0;
         let keys = ZobristKeys::get();
 
         for sq_idx in 0..64 {
             let sq = ChessSquare(sq_idx);
             if let Some(piece) = self.chessboard.get_piece_at(sq) {
-                hash ^=
-                    keys.pieces[piece.color as usize][piece.piece_type as usize][sq_idx as usize];
+                hash ^= keys.pieces[piece.color as usize][piece.piece_type as usize][sq_idx as usize];
+            }
+        }
+
+        for color in [Color::White, Color::Black] {
+            for piece_type in [
+                PieceType::Pawn,
+                PieceType::Knight,
+                PieceType::Bishop,
+                PieceType::Rook,
+                PieceType::Queen,
+                PieceType::King,
+            ] {
+                let mut bb = self.chessboard.get_piece_bitboard(color, piece_type);
+                while let Some(sq) = bb.pop_lsb() {
+                    hash ^= keys.pieces[color as usize][piece_type as usize][sq.0 as usize];
+                }
             }
         }
 
