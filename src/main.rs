@@ -1,12 +1,10 @@
 use chess_engine::*;
-use std::collections::HashMap;
-use std::f64::consts::PI;
-use std::fmt;
 use std::io;
 use std::io::Write;
 
 fn main() {
     let mut game = ChessGame::default();
+    game.zobrist_hash = game.calculate_hash();
 
     loop {
         ChessGame::fen_to_ascii(&game.to_fen());
