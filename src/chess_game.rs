@@ -260,10 +260,10 @@ impl ChessGame {
             hash ^= keys.side_to_move;
         }
 
-        self.zobrist_hash = hash;
+        hash
     }
 
-    pub fn validate_move(&self, mov: &ChessMove, legal: bool) -> Result<(), &str> {
+    pub fn validate_move(&self, mov: &ChessMove) -> Result<(), &str> {
         let from_sq = mov.from;
         let to_sq = mov.to;
         let opponent = self.side_to_move.opposite();
@@ -448,19 +448,22 @@ impl ChessGame {
             }
         }
 
-        if legal {
-            let mut temp_board = self.chessboard.clone();
-            temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
+        match self.rule_set {
+            RuleSet::Legal => {
+                let mut temp_board = self.chessboard.clone();
+                temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
-            let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
-            let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);
+                let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
+                let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);
 
-            if temp_board.is_square_attacked(king_sq, opponent) {
-                return Err("Move leaves King in check");
+                if temp_board.is_square_attacked(king_sq, opponent) {
+                    return Err("Move leaves King in check");
+                } else {
+                    Ok(())
+                }
             }
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
@@ -486,6 +489,7 @@ impl ChessGame {
             halfmove_clock: self.halfmove_clock,
             fullmove_counter: self.fullmove_counter,
             zobrist_hash: self.zobrist_hash,
+            rule_set: self.rule_set.clone(),
         });
 
         // Remove Old Global State from Hash
@@ -583,6 +587,50 @@ impl ChessGame {
         if let Some(ep) = self.en_passant {
             self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
         }
+
+        debug_assert!(self.zobrist_hash == self.calculate_hash())
+    }
+
+    pub fn unmake_move(&mut self) {
+        let entry = self.game_history.pop().expect("No history to unmake");
+        let mov = entry.move_made;
+        self.side_to_move = entry.side_to_move;
+        self.castling_rights = entry.castling_rights;
+        self.en_passant = entry.en_passant;
+        self.halfmove_clock = entry.halfmove_clock;
+        self.fullmove_counter = entry.fullmove_counter;
+
+        let current_piece = self.chessboard.get_piece_at(mov.to).expect("chessboard desync: Piece missing on unmake");
+
+        if mov.promotion.is_some() {
+            self.chessboard.remove_piece(current_piece, mov.to);
+            let pawn = ChessPiece { color: self.side_to_move, piece_type: PieceType::Pawn };
+            self.chessboard.add_piece(pawn, mov.from);
+        } else {
+            self.chessboard.move_piece(mov.to, mov.from, current_piece);
+        }
+
+        if let Some(cap_piece) = entry.captured_piece {
+            let mut cap_sq = mov.to;
+            if current_piece.piece_type == PieceType::Pawn && entry.en_passant == Some(mov.to) {
+                cap_sq = ChessSquare::from_coords(mov.to.file(), mov.from.rank()).unwrap();
+            }
+            self.chessboard.add_piece(cap_piece, cap_sq);
+        }
+
+        if current_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2 {
+            let (rook_now, rook_orig) = match mov.to {
+                ChessSquare::G1 => (ChessSquare::F1, ChessSquare::H1),
+                ChessSquare::C1 => (ChessSquare::D1, ChessSquare::A1),
+                ChessSquare::G8 => (ChessSquare::F8, ChessSquare::H8),
+                ChessSquare::C8 => (ChessSquare::D8, ChessSquare::A8),
+                _ => panic!("Invalid castle unmake state"),
+            };
+
+            let rook = self.chessboard.get_piece_at(rook_now).expect("Rook missing in un-castle");
+
+            self.chessboard.move_piece(rook_now, rook_orig, rook);
+        }
     }
 
     pub fn is_game_over(&self) -> Outcome {
@@ -602,6 +650,10 @@ impl ChessGame {
 
         let white_king = self.chessboard.get_piece_bitboard(Color::White, PieceType::King);
         let black_king = self.chessboard.get_piece_bitboard(Color::Black, PieceType::King);
+
+        if self.is_checkmate() {
+            return Outcome::Finished(Some(self.side_to_move));
+        }
 
         if white_king.is_empty() {
             return Outcome::Finished(Some(Color::Black));
