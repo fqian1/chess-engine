@@ -8,8 +8,8 @@ pub struct ChessMove {
 }
 
 impl ChessMove {
-    pub fn new(from: ChessSquare, to: ChessSquare) -> Self {
-        Self { from, to, promotion: None }
+    pub fn new(from: ChessSquare, to: ChessSquare, promotion: Option<PieceType>) -> Self {
+        Self { from, to, promotion: promotion }
     }
 
     pub fn from_uci(uci: &str) -> Result<Self, &'static str> {
