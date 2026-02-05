@@ -165,10 +165,35 @@ impl std::ops::Not for Bitboard {
 macro_rules! impl_bit_ops {
     ($($trait:ident, $fn:ident, $op:tt),*) => {
         $(
-            impl std::ops::$trait for Bitboard {
+            // Bitboard | Bitboard
+            impl std::ops::$trait<Bitboard> for Bitboard {
                 type Output = Self;
                 fn $fn(self, rhs: Self) -> Self::Output {
                     Self(self.0 $op rhs.0)
+                }
+            }
+
+            // Bitboard | &Bitboard
+            impl std::ops::$trait<&Bitboard> for Bitboard {
+                type Output = Self;
+                fn $fn(self, rhs: &Bitboard) -> Self::Output {
+                    Self(self.0 $op rhs.0)
+                }
+            }
+
+            // &Bitboard | Bitboard
+            impl std::ops::$trait<Bitboard> for &Bitboard {
+                type Output = Bitboard;
+                fn $fn(self, rhs: Bitboard) -> Self::Output {
+                    Bitboard(self.0 $op rhs.0)
+                }
+            }
+
+            // &Bitboard | &Bitboard
+            impl std::ops::$trait<&Bitboard> for &Bitboard {
+                type Output = Bitboard;
+                fn $fn(self, rhs: &Bitboard) -> Self::Output {
+                    Bitboard(self.0 $op rhs.0)
                 }
             }
         )*
