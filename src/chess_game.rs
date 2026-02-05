@@ -1,3 +1,5 @@
+use crate::Bitboard;
+
 use super::{CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
 
 pub enum MoveValidity {
@@ -263,6 +265,8 @@ impl ChessGame {
         hash
     }
 
+    // pub fn
+
     pub fn validate_move(&self, mov: &ChessMove) -> Result<(), &str> {
         let from_sq = mov.from;
         let to_sq = mov.to;
@@ -353,7 +357,12 @@ impl ChessGame {
             }
 
             PieceType::Rook => {
-                if !ChessBoard::ROOK_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+                let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
+                    .iter()
+                    .copied()
+                    .reduce(|acc, bb| acc | bb)
+                    .unwrap_or(Bitboard::EMPTY);
+                if !rook_attacks.is_set(to_sq) {
                     return Err("Invalid Rook move");
                 }
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
@@ -365,7 +374,12 @@ impl ChessGame {
             }
 
             PieceType::Bishop => {
-                if !ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+                let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
+                    .iter()
+                    .copied()
+                    .reduce(|acc, bb| acc | bb)
+                    .unwrap_or(Bitboard::EMPTY);
+                if !bishop_attacks.is_set(to_sq) {
                     return Err("Invalid Bishop move");
                 }
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize]
@@ -383,8 +397,19 @@ impl ChessGame {
             }
 
             PieceType::Queen => {
-                let is_diag = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize].is_set(to_sq);
-                let is_orth = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize].is_set(to_sq);
+                let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
+                    .iter()
+                    .copied()
+                    .reduce(|acc, bb| acc | bb)
+                    .unwrap_or(Bitboard::EMPTY);
+                let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
+                    .iter()
+                    .copied()
+                    .reduce(|acc, bb| acc | bb)
+                    .unwrap_or(Bitboard::EMPTY);
+
+                let is_diag = bishop_attacks.is_set(to_sq);
+                let is_orth = rook_attacks.is_set(to_sq);
 
                 if !is_diag && !is_orth {
                     return Err("Invalid Queen move");
@@ -672,11 +697,11 @@ impl ChessGame {
             return false;
         }
         let mut squares = ChessBoard::KING_ATTACKS[king_sq.0 as usize];
+        let occupancy = match self.side_to_move {
+            Color::White => self.chessboard.white_occupancy,
+            Color::Black => self.chessboard.black_occupancy,
+        };
         while let Some(square) = squares.pop_lsb() {
-            let occupancy = match self.side_to_move {
-                Color::White => self.chessboard.white_occupancy,
-                Color::Black => self.chessboard.black_occupancy,
-            };
             if !self.chessboard.is_square_attacked(square, self.side_to_move) || (king_bb | occupancy).is_empty() {
                 return false;
             }
