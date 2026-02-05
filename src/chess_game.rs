@@ -450,45 +450,47 @@ impl ChessGame {
                         ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
                         ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
                         ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
-                        _ => return Err("Invalid King Move"),
+                        _ => return Err(MoveValidity::Impossible),
                     };
 
                     if !self.castling_rights.has(rights_needed) {
-                        return Err("No castling rights");
+                        return Err(MoveValidity::Impossible);
                     }
 
                     if self.chessboard.is_square_attacked(from_sq, opponent) {
-                        return Err("Cannot castle out of check");
+                        return Err(MoveValidity::Impossible);
                     }
                     if self.chessboard.is_square_attacked(crossing_sq, opponent) {
-                        return Err("Cannot castle through check");
+                        return Err(MoveValidity::Impossible);
                     }
                     if self.chessboard.is_square_attacked(to_sq, opponent) {
-                        return Err("Cannot castle into check");
+                        return Err(MoveValidity::Impossible);
                     }
                 }
             }
         }
-
-        match self.rule_set {
-            RuleSet::Legal => {
-                let mut temp_board = self.chessboard.clone();
-                temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
-
-                let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
-                let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);
-
-                if temp_board.is_square_attacked(king_sq, opponent) {
-                    return Err("Move leaves King in check");
-                } else {
-                    Ok(())
-                }
-            }
-            _ => Ok(()),
+        if self.rule_set == RuleSet::Legal && self.is_legal(mov) {
+            return Ok(());
+        } else {
+            return Err(MoveValidity::PseudoLegal);
         }
     }
 
-    fn generate_moves(&self) -> Vec<ChessMove> {
+    pub fn is_legal(&self, mov: &ChessMove) -> bool {
+        let mut temp_board = self.chessboard.clone();
+        temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
+
+        let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
+        let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);
+
+        if temp_board.is_square_attacked(king_sq, self.side_to_move.opposite()) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    pub fn generate_moves(&self) -> Vec<ChessMove> {
         let mut moves: Vec<ChessMove> = Vec::new();
 
         let (mut ally_occupancy, enemy_occupancy) = match self.side_to_move {
@@ -498,13 +500,17 @@ impl ChessGame {
 
         while let Some(from_sq) = ally_occupancy.pop_lsb() {
             let piece = self.chessboard.get_piece_at(from_sq).unwrap();
+            let legal_ruleset = self.rule_set == RuleSet::Legal;
             match piece.piece_type {
                 PieceType::Pawn => {
                     let side = self.side_to_move;
                     let rank_7 = if side == Color::White { 6 } else { 1 };
                     let rank_2 = if side == Color::White { 1 } else { 6 };
 
-                    let mut add_move = |moves2: &mut Vec<ChessMove>, from: ChessSquare, to: ChessSquare| {
+                    let add_move = |moves2: &mut Vec<ChessMove>, from: ChessSquare, to: ChessSquare| {
+                        if legal_ruleset && !self.is_legal(&ChessMove::new(from, to, None)) {
+                            return;
+                        }
                         if from.rank() == rank_7 {
                             for piece in [PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
                                 moves2.push(ChessMove::new(from, to, Some(piece)));
@@ -529,7 +535,10 @@ impl ChessGame {
                         if from_sq.rank() == rank_2 {
                             let two_step = shift(one_step);
                             if (two_step & self.chessboard.all_pieces).is_empty() {
-                                moves.push(ChessMove::new(from_sq, two_step.lsb_square().unwrap(), None));
+                                let mv = ChessMove::new(from_sq, two_step.lsb_square().unwrap(), None);
+                                if legal_ruleset && self.is_legal(&mv) {
+                                    moves.push(mv);
+                                }
                             }
                         }
                     }
@@ -555,7 +564,10 @@ impl ChessGame {
                 PieceType::Knight => {
                     let mut to_squares = ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize] & !ally_occupancy;
                     while let Some(to_sq) = to_squares.pop_lsb() {
-                        moves.push(ChessMove::new(from_sq, to_sq, None));
+                        let mv = ChessMove::new(from_sq, to_sq, None);
+                        if legal_ruleset && self.is_legal(&mv) {
+                            moves.push(mv);
+                        }
                     }
                 }
                 PieceType::Bishop => {
@@ -567,7 +579,10 @@ impl ChessGame {
                             if ally_occupancy.is_set(sq) {
                                 break;
                             }
-                            moves.push(ChessMove::new(from_sq, sq, None));
+                            let mv = ChessMove::new(from_sq, sq, None);
+                            if legal_ruleset && self.is_legal(&mv) {
+                                moves.push(mv);
+                            }
                             if enemy_occupancy.is_set(sq) {
                                 break;
                             }
@@ -582,7 +597,10 @@ impl ChessGame {
                             if ally_occupancy.is_set(sq) {
                                 break;
                             }
-                            moves.push(ChessMove::new(from_sq, sq, None));
+                            let mv = ChessMove::new(from_sq, sq, None);
+                            if legal_ruleset && self.is_legal(&mv) {
+                                moves.push(mv);
+                            }
                             if enemy_occupancy.is_set(sq) {
                                 break;
                             }
@@ -597,7 +615,10 @@ impl ChessGame {
                             if ally_occupancy.is_set(sq) {
                                 break;
                             }
-                            moves.push(ChessMove::new(from_sq, sq, None));
+                            let mv = ChessMove::new(from_sq, sq, None);
+                            if legal_ruleset && self.is_legal(&mv) {
+                                moves.push(mv);
+                            }
                             if enemy_occupancy.is_set(sq) {
                                 break;
                             }
@@ -608,7 +629,10 @@ impl ChessGame {
                             if ally_occupancy.is_set(sq) {
                                 break;
                             }
-                            moves.push(ChessMove::new(from_sq, sq, None));
+                            let mv = ChessMove::new(from_sq, sq, None);
+                            if legal_ruleset && self.is_legal(&mv) {
+                                moves.push(mv);
+                            }
                             if enemy_occupancy.is_set(sq) {
                                 break;
                             }
@@ -616,9 +640,11 @@ impl ChessGame {
                     }
                 }
                 PieceType::King => {
-                    let mut bb = ChessBoard::KING_ATTACKS[from_sq.0 as usize] & ally_occupancy;
+                    let mut bb = ChessBoard::KING_ATTACKS[from_sq.0 as usize] & !ally_occupancy;
                     while let Some(sq) = bb.pop_lsb() {
-                        moves.push(ChessMove::new(from_sq, sq, None));
+                        if legal_ruleset && !self.chessboard.is_square_attacked(sq, self.side_to_move.opposite()) {
+                            moves.push(ChessMove::new(from_sq, sq, None));
+                        }
                     }
                 }
             }
@@ -794,7 +820,7 @@ impl ChessGame {
         }
     }
 
-    pub fn is_game_over(&self) -> Outcome {
+    pub fn check_game_state(&self) -> Outcome {
         if self.halfmove_clock >= 100 {
             return Outcome::Finished(None);
         }
@@ -805,16 +831,9 @@ impl ChessGame {
             return Outcome::Finished(None);
         }
 
-        if self.is_insufficient_material() {
-            return Outcome::Finished(None);
-        }
-
+        // King capture
         let white_king = self.chessboard.get_piece_bitboard(Color::White, PieceType::King);
         let black_king = self.chessboard.get_piece_bitboard(Color::Black, PieceType::King);
-
-        if self.is_checkmate() {
-            return Outcome::Finished(Some(self.side_to_move));
-        }
 
         if white_king.is_empty() {
             return Outcome::Finished(Some(Color::Black));
@@ -823,34 +842,21 @@ impl ChessGame {
             return Outcome::Finished(Some(Color::White));
         }
 
-        Outcome::Unfinished
-    }
-
-    fn is_checkmate(&self) -> bool {
+        //  checkmate (doesnt work)
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move.opposite(), PieceType::King);
         let king_sq = king_bb.pop_lsb().unwrap();
         if !self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
-            return false;
-        }
-        let mut squares = ChessBoard::KING_ATTACKS[king_sq.0 as usize];
-        let occupancy = match self.side_to_move {
-            Color::White => self.chessboard.white_occupancy,
-            Color::Black => self.chessboard.black_occupancy,
-        };
-        while let Some(square) = squares.pop_lsb() {
-            if !self.chessboard.is_square_attacked(square, self.side_to_move) || (king_bb | occupancy).is_empty() {
-                return false;
+            if self.generate_moves().is_empty() {
+                return Outcome::Finished(Some(self.side_to_move.opposite()));
             }
         }
-        return true;
-    }
 
-    fn is_insufficient_material(&self) -> bool {
+        // is_insufficient_material (primitive)
         let all_pieces = self.chessboard.all_pieces;
         let count = all_pieces.count();
 
         if count == 2 {
-            return true;
+            return Outcome::Finished(None);
         }
 
         if count == 3 {
@@ -860,9 +866,10 @@ impl ChessGame {
                 | self.chessboard.get_piece_bitboard(Color::Black, PieceType::Bishop);
 
             if !white_minors.is_empty() || !black_minors.is_empty() {
-                return true;
+                return Outcome::Finished(None);
             }
         }
-        false
+
+        Outcome::Unfinished
     }
 }
