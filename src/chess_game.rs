@@ -491,6 +491,145 @@ impl ChessGame {
         }
     }
 
+    fn generate_moves(&self) -> Vec<ChessMove> {
+        let mut moves: Vec<ChessMove> = Vec::new();
+
+        let (mut ally_occupancy, enemy_occupancy) = match self.side_to_move {
+            Color::White => (self.chessboard.white_occupancy, self.chessboard.black_occupancy),
+            Color::Black => (self.chessboard.black_occupancy, self.chessboard.white_occupancy),
+        };
+
+        while let Some(from_sq) = ally_occupancy.pop_lsb() {
+            let piece = self.chessboard.get_piece_at(from_sq).unwrap();
+            match piece.piece_type {
+                PieceType::Pawn => {
+                    let side = self.side_to_move;
+                    let rank_7 = if side == Color::White { 6 } else { 1 };
+                    let rank_2 = if side == Color::White { 1 } else { 6 };
+
+                    let mut add_move = |moves2: &mut Vec<ChessMove>, from: ChessSquare, to: ChessSquare| {
+                        if from.rank() == rank_7 {
+                            for piece in [PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
+                                moves2.push(ChessMove::new(from, to, Some(piece)));
+                            }
+                        } else {
+                            moves2.push(ChessMove::new(from, to, None));
+                        }
+                    };
+
+                    // Pushes
+                    let shift = if side == Color::White {
+                        |b: Bitboard| b.shift_north()
+                    } else {
+                        |b: Bitboard| b.shift_south()
+                    };
+
+                    let one_step = shift(Bitboard::from_square(from_sq));
+                    if (one_step & self.chessboard.all_pieces).is_empty() {
+                        let to_sq = one_step.lsb_square().unwrap();
+                        add_move(&mut moves, from_sq, to_sq);
+
+                        if from_sq.rank() == rank_2 {
+                            let two_step = shift(one_step);
+                            if (two_step & self.chessboard.all_pieces).is_empty() {
+                                moves.push(ChessMove::new(from_sq, two_step.lsb_square().unwrap(), None));
+                            }
+                        }
+                    }
+
+                    // Captures
+                    let mut attacks = if side == Color::White {
+                        ChessBoard::PAWN_ATTACKS_WHITE[from_sq.0 as usize]
+                    } else {
+                        ChessBoard::PAWN_ATTACKS_BLACK[from_sq.0 as usize]
+                    };
+
+                    let mut targets = enemy_occupancy;
+                    if let Some(ep_sq) = self.en_passant {
+                        targets |= Bitboard::from_square(ep_sq);
+                    }
+
+                    attacks &= targets;
+
+                    while let Some(to_sq) = attacks.pop_lsb() {
+                        add_move(&mut moves, from_sq, to_sq);
+                    }
+                }
+                PieceType::Knight => {
+                    let mut to_squares = ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize] & !ally_occupancy;
+                    while let Some(to_sq) = to_squares.pop_lsb() {
+                        moves.push(ChessMove::new(from_sq, to_sq, None));
+                    }
+                }
+                PieceType::Bishop => {
+                    for dir_idx in 0..4 {
+                        let mut bb =
+                            ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
+
+                        while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
+                            if ally_occupancy.is_set(sq) {
+                                break;
+                            }
+                            moves.push(ChessMove::new(from_sq, sq, None));
+                            if enemy_occupancy.is_set(sq) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                PieceType::Rook => {
+                    for dir_idx in 0..4 {
+                        let mut bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
+
+                        while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
+                            if ally_occupancy.is_set(sq) {
+                                break;
+                            }
+                            moves.push(ChessMove::new(from_sq, sq, None));
+                            if enemy_occupancy.is_set(sq) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                PieceType::Queen => {
+                    for dir_idx in 0..4 {
+                        let mut bb =
+                            ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
+                        while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
+                            if ally_occupancy.is_set(sq) {
+                                break;
+                            }
+                            moves.push(ChessMove::new(from_sq, sq, None));
+                            if enemy_occupancy.is_set(sq) {
+                                break;
+                            }
+                        }
+
+                        let mut bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
+                        while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
+                            if ally_occupancy.is_set(sq) {
+                                break;
+                            }
+                            moves.push(ChessMove::new(from_sq, sq, None));
+                            if enemy_occupancy.is_set(sq) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                PieceType::King => {
+                    let mut bb = ChessBoard::KING_ATTACKS[from_sq.0 as usize] & ally_occupancy;
+                    while let Some(sq) = bb.pop_lsb() {
+                        moves.push(ChessMove::new(from_sq, sq, None));
+                    }
+                }
+            }
+        }
+
+        moves
+    }
+
     pub fn make_move(&mut self, mov: &ChessMove) {
         let keys = ZobristKeys::get();
         let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
