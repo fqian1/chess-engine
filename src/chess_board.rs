@@ -137,51 +137,6 @@ impl ChessBoard {
         attacks
     }
 
-    pub fn is_square_attacked(&self, sq: ChessSquare, attacker_color: Color) -> bool {
-        let enemy_pieces = &self.pieces[attacker_color as usize];
-        let all_pieces = self.all_pieces;
-
-        let incoming_pawn_mask = match attacker_color {
-            Color::White => ChessBoard::PAWN_ATTACKS_BLACK[sq.0 as usize],
-            Color::Black => ChessBoard::PAWN_ATTACKS_WHITE[sq.0 as usize],
-        };
-
-        if !(incoming_pawn_mask & self.pieces[attacker_color as usize][PieceType::Pawn as usize]).is_empty() {
-            return true;
-        }
-
-        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize]).is_empty() {
-            return true;
-        }
-
-        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize]).is_empty() {
-            return true;
-        }
-
-        let mut diagonal_attackers = (enemy_pieces[PieceType::Bishop as usize]
-            | enemy_pieces[PieceType::Queen as usize])
-            & ChessBoard::BISHOP_ATTACKS[sq.0 as usize];
-
-        while let Some(attacker_sq) = diagonal_attackers.pop_lsb() {
-            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
-            if (path & all_pieces).is_empty() {
-                return true;
-            }
-        }
-
-        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize] | enemy_pieces[PieceType::Queen as usize])
-            & ChessBoard::ROOK_ATTACKS[sq.0 as usize];
-
-        while let Some(attacker_sq) = straight_attackers.pop_lsb() {
-            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
-            if (path & all_pieces).is_empty() {
-                return true;
-            }
-        }
-
-        false
-    }
-
     const fn generate_black_pawn_attacks() -> [Bitboard; 64] {
         let mut attacks = [Bitboard::EMPTY; 64];
 
@@ -202,9 +157,56 @@ impl ChessBoard {
         attacks
     }
 
-    pub const fn generate_rook_direction_masks() -> [Bitboard; 64] {
+    pub fn is_square_attacked(&self, sq: ChessSquare, attacker_color: Color) -> bool {
+        let enemy_pieces = &self.pieces[attacker_color as usize];
+        let all_pieces = self.all_pieces;
+        let bishop_attacks = ChessBoard::BISHOP_ATTACKS.map(|x| x[0] | x[1] | x[2] | x[3]);
+        let rook_attacks = ChessBoard::ROOK_ATTACKS.map(|x| x[0] | x[1] | x[2] | x[3]);
+
+        let incoming_pawn_mask = match attacker_color {
+            Color::White => ChessBoard::PAWN_ATTACKS_BLACK[sq.0 as usize],
+            Color::Black => ChessBoard::PAWN_ATTACKS_WHITE[sq.0 as usize],
+        };
+
+        if !(incoming_pawn_mask & self.pieces[attacker_color as usize][PieceType::Pawn as usize]).is_empty() {
+            return true;
+        }
+
+        if !(ChessBoard::KNIGHT_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::Knight as usize]).is_empty() {
+            return true;
+        }
+
+        if !(ChessBoard::KING_ATTACKS[sq.0 as usize] & enemy_pieces[PieceType::King as usize]).is_empty() {
+            return true;
+        }
+
+        let mut diagonal_attackers = (enemy_pieces[PieceType::Bishop as usize]
+            | enemy_pieces[PieceType::Queen as usize])
+            & bishop_attacks[sq.0 as usize];
+
+        while let Some(attacker_sq) = diagonal_attackers.pop_lsb() {
+            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
+            if (path & all_pieces).is_empty() {
+                return true;
+            }
+        }
+
+        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize] | enemy_pieces[PieceType::Queen as usize])
+            & rook_attacks[sq.0 as usize];
+
+        while let Some(attacker_sq) = straight_attackers.pop_lsb() {
+            let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
+            if (path & all_pieces).is_empty() {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub const fn generate_rook_direction_masks() -> [[Bitboard; 4]; 64] {
         let mut i = 0;
-        let mut boards = [Bitboard::EMPTY; 64];
+        let mut boards = [[Bitboard::EMPTY; 4]; 64];
 
         while i < 64 {
             let file = i % 8;
@@ -212,25 +214,25 @@ impl ChessBoard {
 
             let mut r = rank + 1;
             while r < 8 {
-                boards[i].set(ChessSquare((r * 8 + file) as u8));
+                boards[i][0].set(ChessSquare((r * 8 + file) as u8));
                 r += 1;
             }
 
             let mut r = rank as i8 - 1;
             while r >= 0 {
-                boards[i].set(ChessSquare((r as usize * 8 + file) as u8));
+                boards[i][1].set(ChessSquare((r as usize * 8 + file) as u8));
                 r -= 1;
             }
 
             let mut f = file + 1;
             while f < 8 {
-                boards[i].set(ChessSquare((rank * 8 + f) as u8));
+                boards[i][2].set(ChessSquare((rank * 8 + f) as u8));
                 f += 1;
             }
 
             let mut f = file as i8 - 1;
             while f >= 0 {
-                boards[i].set(ChessSquare((rank * 8 + f as usize) as u8));
+                boards[i][3].set(ChessSquare((rank * 8 + f as usize) as u8));
                 f -= 1;
             }
 
@@ -239,8 +241,8 @@ impl ChessBoard {
         boards
     }
 
-    const fn generate_bishop_direction_masks() -> [Bitboard; 64] {
-        let mut boards = [Bitboard::EMPTY; 64];
+    const fn generate_bishop_direction_masks() -> [[Bitboard; 4]; 64] {
+        let mut boards = [[Bitboard::EMPTY; 4]; 64];
 
         let mut i = 0;
         while i < 64 {
@@ -249,25 +251,25 @@ impl ChessBoard {
 
             let mut j = 1;
             while file >= j && rank >= j {
-                boards[i].set(ChessSquare(((rank - j) * 8 + (file - j)) as u8));
+                boards[i][0].set(ChessSquare(((rank - j) * 8 + (file - j)) as u8));
                 j += 1;
             }
 
             j = 1;
             while file + j < 8 && rank >= j {
-                boards[i].set(ChessSquare(((rank - j) * 8 + (file + j)) as u8));
+                boards[i][1].set(ChessSquare(((rank - j) * 8 + (file + j)) as u8));
                 j += 1;
             }
 
             j = 1;
             while file + j < 8 && rank + j < 8 {
-                boards[i].set(ChessSquare(((rank + j) * 8 + (file + j)) as u8));
+                boards[i][2].set(ChessSquare(((rank + j) * 8 + (file + j)) as u8));
                 j += 1;
             }
 
             j = 1;
             while file >= j && rank + j < 8 {
-                boards[i].set(ChessSquare(((rank + j) * 8 + (file - j)) as u8));
+                boards[i][3].set(ChessSquare(((rank + j) * 8 + (file - j)) as u8));
                 j += 1;
             }
 
@@ -282,9 +284,9 @@ impl ChessBoard {
     pub const PAWN_ATTACKS_WHITE: [Bitboard; 64] = Self::generate_white_pawn_attacks();
     pub const PAWN_ATTACKS_BLACK: [Bitboard; 64] = Self::generate_black_pawn_attacks();
     // NORTH EAST SOUTH WEST
-    pub const ROOK_ATTACKS: [Bitboard; 64] = Self::generate_rook_direction_masks();
+    pub const ROOK_ATTACKS: [[Bitboard; 4]; 64] = Self::generate_rook_direction_masks();
     // NW NE SE SW
-    pub const BISHOP_ATTACKS: [Bitboard; 64] = Self::generate_bishop_direction_masks();
+    pub const BISHOP_ATTACKS: [[Bitboard; 4]; 64] = Self::generate_bishop_direction_masks();
 
     pub const BETWEEN: [[Option<Bitboard>; 64]; 64] = Self::generate_between();
 
