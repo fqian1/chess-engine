@@ -43,8 +43,9 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
 - [ ] Generate a dataset by running self-play games (reinforcement learning).
 
 #### Model Architecture (using Burn)
-- [ ] Design a neural network architecture for board evaluation.
+- [ ] Design a Transformer architecture for board evaluation. Self attention for each square. input 12 or 15 bitboards? half move counter, normalised between 0-1 (half move counter / 100). give it last 8 chessboard states.
 - [ ] Implement the network with Burn; Input: Bitboards of game state + Some(Square coords) and Output: Square coords.
+- [ ] 
 
 #### Training
 - [ ] Set up a training pipeline using `burn`.
@@ -52,4 +53,3 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
 - [ ] Choose and implement a loss function (e.g., cross-entropy for move prediction, mean squared error for evaluation).
 - [ ] Select and configure an optimizer (e.g., Adam).
 - [ ] Parallelize the training process.
-
