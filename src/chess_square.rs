@@ -127,6 +127,14 @@ impl ChessSquare {
         Bitboard(1u64 << self.0)
     }
 
+    pub fn square_north(self) -> Option<ChessSquare> {
+        ChessSquare::new(self.0 << 8)
+    }
+
+    pub fn square_south(self) -> Option<ChessSquare> {
+        ChessSquare::new(self.0 >> 8)
+    }
+
     pub fn index(&self) -> u8 {
         self.0
     }
