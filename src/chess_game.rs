@@ -1,6 +1,4 @@
-use crate::Bitboard;
-
-use super::{CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
+use super::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
 
 pub enum MoveValidity {
     Legal,
@@ -21,6 +19,7 @@ pub enum RuleSet {
 
 #[derive(Debug, Clone)]
 pub struct GameStateEntry {
+    pub chessboard: ChessBoard,
     pub move_made: ChessMove,
     pub side_to_move: Color,
     pub captured_piece: Option<ChessPiece>,
@@ -29,7 +28,6 @@ pub struct GameStateEntry {
     pub halfmove_clock: u32,
     pub fullmove_counter: u32,
     pub zobrist_hash: u64,
-    pub rule_set: RuleSet,
 }
 
 #[derive(Debug, Clone)]
@@ -265,24 +263,23 @@ impl ChessGame {
         hash
     }
 
-    // pub fn
-
-    pub fn validate_move(&self, mov: &ChessMove) -> Result<(), MoveValidity> {
+    // unused
+    pub fn validate_move(&self, mov: &ChessMove) -> MoveValidity {
         let from_sq = mov.from;
         let to_sq = mov.to;
         let opponent = self.side_to_move.opposite();
 
         let Some(from_piece) = self.chessboard.get_piece_at(from_sq) else {
-            return Err(MoveValidity::Impossible);
+            return MoveValidity::Impossible;
         };
 
         if from_piece.color != self.side_to_move {
-            return Err(MoveValidity::Impossible);
+            return MoveValidity::Impossible;
         }
 
         if let Some(to_piece) = self.chessboard.get_piece_at(to_sq) {
             if to_piece.color == self.side_to_move {
-                return Err(MoveValidity::Impossible);
+                return MoveValidity::Impossible;
             }
         }
 
@@ -299,22 +296,22 @@ impl ChessGame {
                 match self.side_to_move {
                     Color::White => {
                         if mov.to.rank() != 7 && mov.promotion.is_some() {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                         if mov.to.rank() == 7
                             && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
                         {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                     }
                     Color::Black => {
                         if mov.to.rank() != 0 && mov.promotion.is_some() {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                         if mov.to.rank() == 0
                             && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
                         {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                     }
                 }
@@ -322,22 +319,22 @@ impl ChessGame {
                 if file_diff == 0 {
                     if rank_diff == direction {
                         if self.chessboard.all_pieces.is_set(to_sq) {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                     } else if rank_diff == 2 * direction {
                         if from_sq.rank() != start_rank {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                         let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
                         if self.chessboard.all_pieces.is_set(to_sq) || self.chessboard.all_pieces.is_set(mid_sq) {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                     } else {
-                        return Err(MoveValidity::Impossible);
+                        return MoveValidity::Impossible;
                     }
                 } else if file_diff == 1 {
                     if rank_diff != direction {
-                        return Err(MoveValidity::Impossible);
+                        return MoveValidity::Impossible;
                     }
                     let is_ep = self.en_passant.is_some_and(|sq| sq == to_sq);
 
@@ -348,11 +345,11 @@ impl ChessGame {
                         };
 
                         if !target_occupancy.is_set(to_sq) {
-                            return Err(MoveValidity::Impossible);
+                            return MoveValidity::Impossible;
                         }
                     }
                 } else {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
             }
 
@@ -363,12 +360,12 @@ impl ChessGame {
                     .reduce(|acc, bb| acc | bb)
                     .unwrap_or(Bitboard::EMPTY);
                 if !rook_attacks.is_set(to_sq) {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
                 if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
             }
 
@@ -379,18 +376,18 @@ impl ChessGame {
                     .reduce(|acc, bb| acc | bb)
                     .unwrap_or(Bitboard::EMPTY);
                 if !bishop_attacks.is_set(to_sq) {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
                 if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
             }
 
             PieceType::Knight => {
                 if !ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
             }
 
@@ -410,78 +407,84 @@ impl ChessGame {
                 let is_orth = rook_attacks.is_set(to_sq);
 
                 if !is_diag && !is_orth {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
 
                 let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
                 if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return Err(MoveValidity::Impossible);
+                    return MoveValidity::Impossible;
                 }
             }
 
             PieceType::King => {
-                if ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
-                } else {
-                    let between =
-                        ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+                let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
 
-                    if self.chessboard.all_pieces.is_set(to_sq) {
-                        return Err(MoveValidity::Impossible);
-                    }
+                if self.chessboard.all_pieces.is_set(to_sq) {
+                    return MoveValidity::Impossible;
+                }
 
-                    if !(self.chessboard.all_pieces & between).is_empty() {
-                        return Err(MoveValidity::Impossible);
-                    }
+                if !(self.chessboard.all_pieces & between).is_empty() {
+                    return MoveValidity::Impossible;
+                }
 
-                    if to_sq.file() == 2 {
-                        let b_file_sq = if to_sq.rank() == 0 {
-                            ChessSquare::B1
-                        } else {
-                            ChessSquare::B8
-                        };
-                        if self.chessboard.all_pieces.is_set(b_file_sq) {
-                            return Err(MoveValidity::Impossible);
-                        }
-                    }
-
-                    let (rights_needed, crossing_sq) = match to_sq {
-                        ChessSquare::G1 => (CastlingRights::WHITE_KINGSIDE, ChessSquare::F1),
-                        ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
-                        ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
-                        ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
-                        _ => return Err(MoveValidity::Impossible),
+                if to_sq.file() == 2 {
+                    let b_file_sq = if to_sq.rank() == 0 {
+                        ChessSquare::B1
+                    } else {
+                        ChessSquare::B8
                     };
+                    if self.chessboard.all_pieces.is_set(b_file_sq) {
+                        return MoveValidity::Impossible;
+                    }
+                }
 
-                    if !self.castling_rights.has(rights_needed) {
-                        return Err(MoveValidity::Impossible);
-                    }
+                let (rights_needed, crossing_sq) = match to_sq {
+                    ChessSquare::G1 => (CastlingRights::WHITE_KINGSIDE, ChessSquare::F1),
+                    ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
+                    ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
+                    ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
+                    _ => return MoveValidity::Impossible,
+                };
 
-                    if self.chessboard.is_square_attacked(from_sq, opponent) {
-                        return Err(MoveValidity::Impossible);
+                if !self.castling_rights.has(rights_needed) {
+                    return MoveValidity::Impossible;
+                }
+
+                if self.chessboard.is_square_attacked(from_sq, opponent) {
+                    return MoveValidity::Impossible;
+                }
+                if self.chessboard.is_square_attacked(crossing_sq, opponent) {
+                    return MoveValidity::Impossible;
+                }
+                if self.chessboard.is_square_attacked(to_sq, opponent) {
+                    if self.rule_set == RuleSet::Legal {
+                        return MoveValidity::Impossible;
+                    } else {
+                        return MoveValidity::PseudoLegal;
                     }
-                    if self.chessboard.is_square_attacked(crossing_sq, opponent) {
-                        return Err(MoveValidity::Impossible);
-                    }
-                    if self.chessboard.is_square_attacked(to_sq, opponent) {
-                        return Err(MoveValidity::Impossible);
-                    }
+                }
+
+                if !ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+                    return MoveValidity::Impossible;
                 }
             }
         }
+        // All geometry checks done, so must be pseudo legal or legal
         if self.rule_set == RuleSet::Legal && self.is_legal(mov) {
-            return Ok(());
+            return MoveValidity::Legal;
         } else {
-            return Err(MoveValidity::PseudoLegal);
+            return MoveValidity::PseudoLegal;
         }
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
+        // I DONT CARE! its 120 bytes its FINE.
         let mut temp_board = self.chessboard.clone();
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
-        let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
-        let king_sq = ChessSquare(king_bb.0.trailing_zeros() as u8);
+        let mut king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
+        let king_sq = king_bb.pop_lsb().unwrap();
 
         if temp_board.is_square_attacked(king_sq, self.side_to_move.opposite()) {
             return false;
