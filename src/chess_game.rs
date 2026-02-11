@@ -880,12 +880,20 @@ impl ChessGame {
             return Outcome::Finished(Some(Color::White));
         }
 
-        //  checkmate (doesnt work)
-        let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move.opposite(), PieceType::King);
+        if self.rule_set == RuleSet::PseudoLegal {
+            return Outcome::Unfinished;
+        }
+
+        // Legal Checks
+        // checkmate
+        let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
+        // Safe, king must exist otherwise wouldve returned earlier
         let king_sq = king_bb.pop_lsb().unwrap();
-        if !self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
-            if self.generate_moves().is_empty() {
+        if self.generate_legal().is_empty() {
+            if !self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
                 return Outcome::Finished(Some(self.side_to_move.opposite()));
+            } else {
+                return Outcome::Finished(None);
             }
         }
 
