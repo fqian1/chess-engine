@@ -279,6 +279,8 @@ impl ChessBoard {
         boards
     }
 
+    pub const WHITE_SQUARES: Bitboard = Bitboard(0xAA55AA55AA55AA55);
+    pub const BLACK_SQUARES: Bitboard = Bitboard(0x55AA55AA55AA55AA);
     pub const KNIGHT_ATTACKS: [Bitboard; 64] = Self::generate_knight_attacks();
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
     pub const PAWN_ATTACKS_WHITE: [Bitboard; 64] = Self::generate_white_pawn_attacks();
