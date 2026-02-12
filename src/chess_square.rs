@@ -1,4 +1,5 @@
 use super::Bitboard;
+use super::Color;
 use std::fmt;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -78,11 +79,7 @@ impl ChessSquare {
     pub const H8: ChessSquare = ChessSquare(63);
 
     pub const fn new(index: u8) -> Option<Self> {
-        if index < 64 {
-            Some(ChessSquare(index))
-        } else {
-            None
-        }
+        if index < 64 { Some(ChessSquare(index)) } else { None }
     }
 
     pub const fn from_coords(file: u8, rank: u8) -> Option<Self> {
@@ -113,6 +110,13 @@ impl ChessSquare {
         }
     }
 
+    pub fn colour(self) -> Color {
+        if self.0.trailing_zeros() % 2 == 0 {
+            return Color::White;
+        }
+        Color::Black
+    }
+
     pub fn to_name(self) -> String {
         let file = (b'a' + self.file()) as char;
         let rank = (b'1' + self.rank()) as char;
@@ -128,11 +132,11 @@ impl ChessSquare {
     }
 
     pub fn square_north(self) -> Option<ChessSquare> {
-        ChessSquare::new(self.0 << 8)
+        ChessSquare::new(self.0 + 8)
     }
 
     pub fn square_south(self) -> Option<ChessSquare> {
-        ChessSquare::new(self.0 >> 8)
+        ChessSquare::new(self.0 - 8)
     }
 
     pub fn index(&self) -> u8 {

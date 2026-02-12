@@ -1,6 +1,6 @@
 use super::{ChessSquare, PieceType};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChessMove {
     pub from: ChessSquare,
     pub to: ChessSquare,
