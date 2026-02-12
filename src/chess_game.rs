@@ -1,11 +1,5 @@
 use super::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
 
-pub enum MoveValidity {
-    Legal,
-    PseudoLegal, // Leaves king in check
-    Impossible,  // Geometry violation
-}
-
 pub enum Outcome {
     Unfinished,
     Finished(Option<Color>),
@@ -264,219 +258,219 @@ impl ChessGame {
     }
 
     // unused
-    pub fn validate_move(&self, mov: &ChessMove) -> MoveValidity {
-        let from_sq = mov.from;
-        let to_sq = mov.to;
-        let opponent = self.side_to_move.opposite();
-
-        let Some(from_piece) = self.chessboard.get_piece_at(from_sq) else {
-            return MoveValidity::Impossible;
-        };
-
-        if from_piece.color != self.side_to_move {
-            return MoveValidity::Impossible;
-        }
-
-        if let Some(to_piece) = self.chessboard.get_piece_at(to_sq) {
-            if to_piece.color == self.side_to_move {
-                return MoveValidity::Impossible;
-            }
-        }
-
-        match from_piece.piece_type {
-            PieceType::Pawn => {
-                let (direction, start_rank) = match self.side_to_move {
-                    Color::White => (1, 1),
-                    Color::Black => (-1, 6),
-                };
-
-                let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
-                let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
-
-                match self.side_to_move {
-                    Color::White => {
-                        if mov.to.rank() != 7 && mov.promotion.is_some() {
-                            return MoveValidity::Impossible;
-                        }
-                        if mov.to.rank() == 7
-                            && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
-                        {
-                            return MoveValidity::Impossible;
-                        }
-                    }
-                    Color::Black => {
-                        if mov.to.rank() != 0 && mov.promotion.is_some() {
-                            return MoveValidity::Impossible;
-                        }
-                        if mov.to.rank() == 0
-                            && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
-                        {
-                            return MoveValidity::Impossible;
-                        }
-                    }
-                }
-
-                if file_diff == 0 {
-                    if rank_diff == direction {
-                        if self.chessboard.all_pieces.is_set(to_sq) {
-                            return MoveValidity::Impossible;
-                        }
-                    } else if rank_diff == 2 * direction {
-                        if from_sq.rank() != start_rank {
-                            return MoveValidity::Impossible;
-                        }
-                        let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
-                        if self.chessboard.all_pieces.is_set(to_sq) || self.chessboard.all_pieces.is_set(mid_sq) {
-                            return MoveValidity::Impossible;
-                        }
-                    } else {
-                        return MoveValidity::Impossible;
-                    }
-                } else if file_diff == 1 {
-                    if rank_diff != direction {
-                        return MoveValidity::Impossible;
-                    }
-                    let is_ep = self.en_passant.is_some_and(|sq| sq == to_sq);
-
-                    if !is_ep {
-                        let target_occupancy = match self.side_to_move {
-                            Color::White => self.chessboard.black_occupancy,
-                            Color::Black => self.chessboard.white_occupancy,
-                        };
-
-                        if !target_occupancy.is_set(to_sq) {
-                            return MoveValidity::Impossible;
-                        }
-                    }
-                } else {
-                    return MoveValidity::Impossible;
-                }
-            }
-
-            PieceType::Rook => {
-                let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-                if !rook_attacks.is_set(to_sq) {
-                    return MoveValidity::Impossible;
-                }
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return MoveValidity::Impossible;
-                }
-            }
-
-            PieceType::Bishop => {
-                let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-                if !bishop_attacks.is_set(to_sq) {
-                    return MoveValidity::Impossible;
-                }
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return MoveValidity::Impossible;
-                }
-            }
-
-            PieceType::Knight => {
-                if !ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
-                    return MoveValidity::Impossible;
-                }
-            }
-
-            PieceType::Queen => {
-                let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-                let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-
-                let is_diag = bishop_attacks.is_set(to_sq);
-                let is_orth = rook_attacks.is_set(to_sq);
-
-                if !is_diag && !is_orth {
-                    return MoveValidity::Impossible;
-                }
-
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return MoveValidity::Impossible;
-                }
-            }
-
-            PieceType::King => {
-                let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if self.chessboard.all_pieces.is_set(to_sq) {
-                    return MoveValidity::Impossible;
-                }
-
-                if !(self.chessboard.all_pieces & between).is_empty() {
-                    return MoveValidity::Impossible;
-                }
-
-                if to_sq.file() == 2 {
-                    let b_file_sq = if to_sq.rank() == 0 {
-                        ChessSquare::B1
-                    } else {
-                        ChessSquare::B8
-                    };
-                    if self.chessboard.all_pieces.is_set(b_file_sq) {
-                        return MoveValidity::Impossible;
-                    }
-                }
-
-                let (rights_needed, crossing_sq) = match to_sq {
-                    ChessSquare::G1 => (CastlingRights::WHITE_KINGSIDE, ChessSquare::F1),
-                    ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
-                    ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
-                    ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
-                    _ => return MoveValidity::Impossible,
-                };
-
-                if !self.castling_rights.has(rights_needed) {
-                    return MoveValidity::Impossible;
-                }
-
-                if self.chessboard.is_square_attacked(from_sq, opponent) {
-                    return MoveValidity::Impossible;
-                }
-                if self.chessboard.is_square_attacked(crossing_sq, opponent) {
-                    return MoveValidity::Impossible;
-                }
-                if self.chessboard.is_square_attacked(to_sq, opponent) {
-                    if self.rule_set == RuleSet::Legal {
-                        return MoveValidity::Impossible;
-                    } else {
-                        return MoveValidity::PseudoLegal;
-                    }
-                }
-
-                if !ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
-                    return MoveValidity::Impossible;
-                }
-            }
-        }
-        // All geometry checks done, so must be pseudo legal or legal
-        if self.rule_set == RuleSet::Legal && self.is_legal(mov) {
-            return MoveValidity::Legal;
-        } else {
-            return MoveValidity::PseudoLegal;
-        }
-    }
+    // pub fn validate_move(&self, mov: &ChessMove) -> MoveValidity {
+    //     let from_sq = mov.from;
+    //     let to_sq = mov.to;
+    //     let opponent = self.side_to_move.opposite();
+    //
+    //     let Some(from_piece) = self.chessboard.get_piece_at(from_sq) else {
+    //         return MoveValidity::Impossible;
+    //     };
+    //
+    //     if from_piece.color != self.side_to_move {
+    //         return MoveValidity::Impossible;
+    //     }
+    //
+    //     if let Some(to_piece) = self.chessboard.get_piece_at(to_sq) {
+    //         if to_piece.color == self.side_to_move {
+    //             return MoveValidity::Impossible;
+    //         }
+    //     }
+    //
+    //     match from_piece.piece_type {
+    //         PieceType::Pawn => {
+    //             let (direction, start_rank) = match self.side_to_move {
+    //                 Color::White => (1, 1),
+    //                 Color::Black => (-1, 6),
+    //             };
+    //
+    //             let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
+    //             let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
+    //
+    //             match self.side_to_move {
+    //                 Color::White => {
+    //                     if mov.to.rank() != 7 && mov.promotion.is_some() {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                     if mov.to.rank() == 7
+    //                         && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+    //                     {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                 }
+    //                 Color::Black => {
+    //                     if mov.to.rank() != 0 && mov.promotion.is_some() {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                     if mov.to.rank() == 0
+    //                         && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+    //                     {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                 }
+    //             }
+    //
+    //             if file_diff == 0 {
+    //                 if rank_diff == direction {
+    //                     if self.chessboard.all_pieces.is_set(to_sq) {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                 } else if rank_diff == 2 * direction {
+    //                     if from_sq.rank() != start_rank {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                     let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
+    //                     if self.chessboard.all_pieces.is_set(to_sq) || self.chessboard.all_pieces.is_set(mid_sq) {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                 } else {
+    //                     return MoveValidity::Impossible;
+    //                 }
+    //             } else if file_diff == 1 {
+    //                 if rank_diff != direction {
+    //                     return MoveValidity::Impossible;
+    //                 }
+    //                 let is_ep = self.en_passant.is_some_and(|sq| sq == to_sq);
+    //
+    //                 if !is_ep {
+    //                     let target_occupancy = match self.side_to_move {
+    //                         Color::White => self.chessboard.black_occupancy,
+    //                         Color::Black => self.chessboard.white_occupancy,
+    //                     };
+    //
+    //                     if !target_occupancy.is_set(to_sq) {
+    //                         return MoveValidity::Impossible;
+    //                     }
+    //                 }
+    //             } else {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //         }
+    //
+    //         PieceType::Rook => {
+    //             let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //             if !rook_attacks.is_set(to_sq) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //             let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if !(ray_board & self.chessboard.all_pieces).is_empty() {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //         }
+    //
+    //         PieceType::Bishop => {
+    //             let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //             if !bishop_attacks.is_set(to_sq) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //             let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if !(ray_board & self.chessboard.all_pieces).is_empty() {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //         }
+    //
+    //         PieceType::Knight => {
+    //             if !ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //         }
+    //
+    //         PieceType::Queen => {
+    //             let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //             let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //
+    //             let is_diag = bishop_attacks.is_set(to_sq);
+    //             let is_orth = rook_attacks.is_set(to_sq);
+    //
+    //             if !is_diag && !is_orth {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //
+    //             let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if !(ray_board & self.chessboard.all_pieces).is_empty() {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //         }
+    //
+    //         PieceType::King => {
+    //             let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if self.chessboard.all_pieces.is_set(to_sq) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //
+    //             if !(self.chessboard.all_pieces & between).is_empty() {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //
+    //             if to_sq.file() == 2 {
+    //                 let b_file_sq = if to_sq.rank() == 0 {
+    //                     ChessSquare::B1
+    //                 } else {
+    //                     ChessSquare::B8
+    //                 };
+    //                 if self.chessboard.all_pieces.is_set(b_file_sq) {
+    //                     return MoveValidity::Impossible;
+    //                 }
+    //             }
+    //
+    //             let (rights_needed, crossing_sq) = match to_sq {
+    //                 ChessSquare::G1 => (CastlingRights::WHITE_KINGSIDE, ChessSquare::F1),
+    //                 ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
+    //                 ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
+    //                 ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
+    //                 _ => return MoveValidity::Impossible,
+    //             };
+    //
+    //             if !self.castling_rights.has(rights_needed) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //
+    //             if self.chessboard.is_square_attacked(from_sq, opponent) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //             if self.chessboard.is_square_attacked(crossing_sq, opponent) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //             if self.chessboard.is_square_attacked(to_sq, opponent) {
+    //                 if self.rule_set == RuleSet::Legal {
+    //                     return MoveValidity::Impossible;
+    //                 } else {
+    //                     return MoveValidity::PseudoLegal;
+    //                 }
+    //             }
+    //
+    //             if !ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+    //                 return MoveValidity::Impossible;
+    //             }
+    //         }
+    //     }
+    //     // All geometry checks done, so must be pseudo legal or legal
+    //     if self.rule_set == RuleSet::Legal && self.is_legal(mov) {
+    //         return MoveValidity::Legal;
+    //     } else {
+    //         return MoveValidity::PseudoLegal;
+    //     }
+    // }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
         // I DONT CARE! its 120 bytes its FINE.
@@ -501,12 +495,12 @@ impl ChessGame {
             Color::Black => (self.chessboard.black_occupancy, self.chessboard.white_occupancy),
         };
 
-        let mut pawns = self.chessboard.pieces[PieceType::Pawn as usize][self.side_to_move as usize];
-        let mut knights = self.chessboard.pieces[PieceType::Knight as usize][self.side_to_move as usize];
-        let mut bishops = self.chessboard.pieces[PieceType::Bishop as usize][self.side_to_move as usize];
-        let mut rooks = self.chessboard.pieces[PieceType::Rook as usize][self.side_to_move as usize];
-        let mut queens = self.chessboard.pieces[PieceType::Queen as usize][self.side_to_move as usize];
-        let mut king = self.chessboard.pieces[PieceType::King as usize][self.side_to_move as usize];
+        let mut pawns = self.chessboard.pieces[self.side_to_move as usize][PieceType::Pawn as usize];
+        let mut knights = self.chessboard.pieces[self.side_to_move as usize][PieceType::Knight as usize];
+        let mut bishops = self.chessboard.pieces[self.side_to_move as usize][PieceType::Bishop as usize];
+        let mut rooks = self.chessboard.pieces[self.side_to_move as usize][PieceType::Rook as usize];
+        let mut queens = self.chessboard.pieces[self.side_to_move as usize][PieceType::Queen as usize];
+        let mut king = self.chessboard.pieces[self.side_to_move as usize][PieceType::King as usize];
 
         while let Some(from_sq) = pawns.pop_lsb() {
             let side = self.side_to_move;
@@ -682,12 +676,20 @@ impl ChessGame {
         moves
     }
 
-    pub fn generate_legal(&self) -> Vec<ChessMove> {
-        let mut moves = self.generate_pseudolegal();
-        moves.retain(|x| self.is_legal(x));
-        moves
+    pub fn is_valid(&self, mov: &ChessMove) -> bool {
+        let pseudolegal_moves = self.generate_pseudolegal();
+        if pseudolegal_moves.contains(mov) {
+            if self.rule_set == RuleSet::PseudoLegal {
+                return true;
+            } else if self.is_legal(mov) {
+                return true;
+            }
+        }
+        false
     }
 
+    // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible
+    // moves.
     pub fn make_move(&mut self, mov: &ChessMove) {
         let keys = ZobristKeys::get();
         let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
@@ -856,7 +858,6 @@ impl ChessGame {
         }
     }
 
-    // not finished. need to distinguish between pseudo legal and legal rule sets
     pub fn check_game_state(&self) -> Outcome {
         // PseudoLegal and Legal Checks
         if self.halfmove_clock >= 100 {
@@ -889,30 +890,55 @@ impl ChessGame {
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
         // Safe, king must exist otherwise wouldve returned earlier
         let king_sq = king_bb.pop_lsb().unwrap();
-        if self.generate_legal().is_empty() {
-            if !self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
+        let mut legal_moves = self.generate_pseudolegal();
+        legal_moves.retain(|x| self.is_legal(x));
+        if legal_moves.is_empty() {
+            if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
                 return Outcome::Finished(Some(self.side_to_move.opposite()));
             } else {
                 return Outcome::Finished(None);
             }
         }
 
-        // is_insufficient_material (primitive)
+        // insufficient material
         let all_pieces = self.chessboard.all_pieces;
         let count = all_pieces.count();
 
         if count == 2 {
             return Outcome::Finished(None);
         }
+        let mut white_bishops = self.chessboard.get_piece_bitboard(Color::White, PieceType::Bishop);
+        let white_knights = self.chessboard.get_piece_bitboard(Color::White, PieceType::Knight);
+        let mut black_bishops = self.chessboard.get_piece_bitboard(Color::Black, PieceType::Bishop);
+        let black_knights = self.chessboard.get_piece_bitboard(Color::Black, PieceType::Knight);
+
+        let white_minors = white_bishops | white_knights;
+        let black_minors = black_bishops | black_knights;
 
         if count == 3 {
-            let white_minors = self.chessboard.get_piece_bitboard(Color::White, PieceType::Knight)
-                | self.chessboard.get_piece_bitboard(Color::White, PieceType::Bishop);
-            let black_minors = self.chessboard.get_piece_bitboard(Color::Black, PieceType::Knight)
-                | self.chessboard.get_piece_bitboard(Color::Black, PieceType::Bishop);
-
             if !white_minors.is_empty() || !black_minors.is_empty() {
                 return Outcome::Finished(None);
+            }
+        }
+        if count == 4 {
+            // K + N vs K + N
+            if white_bishops.is_empty() && black_bishops.is_empty() {
+                return Outcome::Finished(None);
+            }
+
+            if black_bishops.count() == 2 {
+                if let (Some(sq1), Some(sq2)) = (black_bishops.pop_msb(), black_bishops.pop_msb()) {
+                    if sq1.colour() == sq2.colour() {
+                        return Outcome::Finished(None);
+                    }
+                }
+            }
+            if white_bishops.count() == 2 {
+                if let (Some(sq1), Some(sq2)) = (white_bishops.pop_msb(), white_bishops.pop_msb()) {
+                    if sq1.colour() == sq2.colour() {
+                        return Outcome::Finished(None);
+                    }
+                }
             }
         }
 
