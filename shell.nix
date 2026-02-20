@@ -13,6 +13,7 @@ in
       rustNightly
       pkgs.cargo
     ];
+    # Weird thing to expose vulkan backend
     shellHook = ''
       LD_LIBRARY_PATH="''${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${
         with pkgs;
