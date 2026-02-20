@@ -3,17 +3,37 @@ use std::io;
 use std::io::Write;
 use burn::backend::Wgpu;
 
+pub struct TrainingMetrics {
+    pub epoch: u32,
+    pub illegal_moves_generate: u32,
+    pub total_moves_generated: u32,
+    pub average_loss: u32,
+    pub average_game_length: u32,
+    pub unique_positions_seen: u32,
+}
+
 fn main() {
     type MyBackend = Wgpu<f32, i32>;
+
+    let size = model_size * 4;
+    let n_heads = size;
+    let n_layers = size;
+    let d_model = n_heads * 64;
+    let d_ff = 4 * d_model;
+
 
     let device = Default::default();
     let model = ModelConfig::new(10, 512).init::<MyBackend>(&device);
     println!("{model}");
 
-    let mut chessgames: Vec<ChessGame> = vec!(ChessGame::default());
+    let mut chessgames: Vec<ChessGame> = vec![ChessGame::default(); 80];
     chessgames.iter_mut().for_each(|game| {
         game.zobrist_hash = game.calculate_hash()
     });
+
+    loop {
+
+    }
 
     // loop
     // 1. convert to transformer representation
