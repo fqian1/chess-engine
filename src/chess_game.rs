@@ -1,3 +1,5 @@
+use burn::{Tensor, prelude::Backend};
+
 use super::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
 
 pub enum Outcome {
@@ -686,6 +688,19 @@ impl ChessGame {
             }
         }
         false
+    }
+
+    pub fn get_possible_from_squares(&self) -> Vec<ChessSquare> {
+        self.generate_pseudolegal().clone().into_iter().map(|mov| mov.from).collect()
+    }
+
+    pub fn get_possible_to_squares(&self, from_square: &ChessSquare) -> Vec<ChessSquare> {
+        self.generate_pseudolegal()
+            .clone()
+            .into_iter()
+            .filter(|mov| mov.from == *from_square)
+            .map(|mov| mov.to)
+            .collect()
     }
 
     // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible
