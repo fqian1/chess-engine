@@ -132,7 +132,20 @@ impl Bitboard {
     }
 
     pub fn flip(&mut self) {
-        self.0 = self.0.swap_bytes()
+        *self = self.flipped();
+    }
+
+    pub fn flipped(&self) -> Bitboard {
+        Bitboard(
+            (self.0 << 56)
+                | ((self.0 << 40) & 0x00FF_0000_0000_0000)
+                | ((self.0 << 24) & 0x0000_FF00_0000_0000)
+                | ((self.0 << 8) & 0x0000_00FF_0000_0000)
+                | ((self.0 >> 8) & 0x0000_0000_FF00_0000)
+                | ((self.0 >> 24) & 0x0000_0000_00FF_0000)
+                | ((self.0 >> 40) & 0x0000_0000_0000_FF00)
+                | (self.0 >> 56),
+        )
     }
 }
 
