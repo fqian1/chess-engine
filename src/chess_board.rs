@@ -363,6 +363,13 @@ impl ChessBoard {
         self.add_piece(piece, to_sq);
     }
 
+    pub fn flip_board(&self) -> [[Bitboard; 6]; 2] {
+        [
+            self.pieces[1].map(|b| b.flipped()),
+            self.pieces[0].map(|b| b.flipped()),
+        ]
+    }
+
     pub fn apply_move(&mut self, mov: &ChessMove, side_to_move: Color, en_passant_sq: Option<ChessSquare>) {
         let moving_piece = self.get_piece_at(mov.from).expect("No piece selected");
         let is_en_passant = moving_piece.piece_type == PieceType::Pawn && en_passant_sq.is_some_and(|sq| sq == mov.to);
