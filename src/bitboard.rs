@@ -1,3 +1,5 @@
+use wide::u16x8;
+
 use super::ChessSquare;
 use std::fmt;
 
@@ -133,6 +135,10 @@ impl Bitboard {
 
     pub fn flip(&mut self) {
         *self = self.flipped();
+    }
+
+    pub fn to_f32(self) -> [f32; 64] {
+        (0..64).map(|x| ((self.0 >> x) & 1) as f32).collect::<Vec<f32>>().try_into().unwrap()
     }
 
     pub fn flipped(&self) -> Bitboard {
