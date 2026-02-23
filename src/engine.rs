@@ -8,29 +8,44 @@ use burn::{
     tensor::{Scalar, backend::AutodiffBackend},
 };
 
-use crate::{Bitboard, CastlingRights, ChessPiece};
+use crate::{Bitboard, CastlingRights, ChessPiece, chess_square};
 use crate::{ChessBoard, castling, chess_board, chess_game::GameStateEntry};
 use crate::{ChessGame, ChessSquare, Color};
 
 #[derive(Debug, Clone)]
-pub struct TrainingDataEntry {
-    game_state: GameStateEntry,
-    from_sq: Option<ChessSquare>,
-    win: bool,
-    delta_value: f32,
-    moves_left: usize,
+pub struct MoveData {
+    policy:     ChessSquare,
+    value:      f32,
+    moves_left: u32,
 }
 
-impl TrainingDataEntry {
-    pub fn to_tensor_infer<B: Backend>(&self) -> (Tensor<B, 3>, Tensor<B, 2>) {
-        let device = &Default::default();
-        // 0..12 chesboard, 13 from_sq, 14 en_sq
-        let mut data = [[0.0f32; 14]; 64];
+#[derive(Debug, Clone)]
+pub struct GameData {
+    game_state: GameStateEntry,
+    from_sq:    Option<ChessSquare>,
+    to_sq:      Option<ChessSquare>,
+}
 
-        let chess_board = if self.game_state.side_to_move == Color::White {
-            self.game_state.chessboard.pieces
+#[derive(Clone)]
+pub struct GameTimeLine {
+    moves:  Vec<MoveData>,
+    games:  Vec<GameData>,
+    result: f32,
+}
+// let batch = [GameTimeLine; batch_size];
+
+impl GameData {
+    pub fn to_tensor<B: Backend>(&self, device: &Device<B>) -> (Tensor<B, 2>, Tensor<B, 1>) {
+        let mut data = [[0f32; 64]; 14];
+
+        let (chess_board, castling_rights, ep_sq) = if self.game_state.side_to_move == Color::White {
+            (self.game_state.chessboard.pieces, self.game_state.castling_rights, self.game_state.en_passant)
         } else {
-            self.game_state.chessboard.flip_board()
+            (
+                self.game_state.chessboard.flip_board(),
+                self.game_state.castling_rights.flip_perspective(),
+                self.game_state.en_passant.map(|x| x.square_opposite()),
+            )
         };
         let mut flat = [Bitboard::default(); 12];
 
@@ -38,37 +53,30 @@ impl TrainingDataEntry {
         flat[6..].copy_from_slice(&chess_board[1]);
 
         for i in 0..12 {
-            for j in 0..64 {
-                let sq = ChessSquare::new(j as u8).unwrap();
-                if flat[i].is_set(sq) {
-                    data[j][i] = 1.0;
-                } else {
-                    data[j][i] = 0.0;
-                }
-            }
+            data[i] = flat[i].to_f32();
         }
 
-        if let Some(square) = self.game_state.en_passant {
-            data[square.0 as usize][13] = 1.0;
+        if let Some(square) = ep_sq {
+            data[12][square.0 as usize] = 1.0;
         }
 
         if let Some(square) = self.from_sq {
-            data[square.0 as usize][14] = 1.0;
+            data[13][square.0 as usize] = 1.0;
         }
+
+        if let Some(square) = self.to_sq {
+            data[13][square.0 as usize] = 1.0;
+        }
+
         let t1 = Tensor::from_data(data, device);
 
-        let castling_rights = self.game_state.castling_rights.0;
         let mut data = [0.0f32; 4];
         for i in 0..4 {
-            data[i] = (castling_rights >> i & 1).into();
+            data[i] = (castling_rights.0 >> i & 1).into();
         }
 
         let t2 = Tensor::from_data(data, device);
         (t1, t2)
-    }
-    pub fn to_tensor_train<B: Backend>(&self) -> Tensor<B, 3> {
-        let device = &Default::default();
-
     }
 }
 
@@ -162,6 +170,13 @@ impl<B: Backend> ChessTransformerModel<B> {
         let policy = self.policy_head.forward(board_latent);
 
         (policy, value, moves_left)
+    }
+    pub fn loss(
+        &self,
+        pred: (Tensor<B, 3>, Tensor<B, 2>, Tensor<B, 2>),
+        training_data: TrainingDataEntry,
+    ) -> (Tensor<B, 3>, Tensor<B, 2>, Tensor<B, 2>) {
+        // policy bce, value mse, [value;3] mse
     }
     // pub fn backprop(&self, training_data: TrainingDataEntry)
 }
