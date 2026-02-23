@@ -46,11 +46,13 @@ impl CastlingRights {
         if self.has(Self::BLACK_QUEENSIDE) {
             s.push('q');
         }
-        if s.is_empty() {
-            "-".to_string()
-        } else {
-            s
-        }
+        if s.is_empty() { "-".to_string() } else { s }
+    }
+
+    pub fn flip_perspective(&self) -> CastlingRights {
+        let val = self.0;
+        let flipped = ((val & 0b0011) << 2) | ((val & 0b1100) >> 2);
+        CastlingRights(flipped)
     }
 
     pub fn has(&self, right: CastlingRights) -> bool {
