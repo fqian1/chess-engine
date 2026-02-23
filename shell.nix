@@ -7,11 +7,7 @@ let
 in
   pkgs.mkShell {
     buildInputs = [
-      pkgs.rustup
-      pkgs.pkg-config
-      pkgs.openssl
       rustNightly
-      pkgs.cargo
     ];
     # Weird thing to expose vulkan backend
     shellHook = ''
