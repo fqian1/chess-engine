@@ -364,10 +364,7 @@ impl ChessBoard {
     }
 
     pub fn flip_board(&self) -> [[Bitboard; 6]; 2] {
-        [
-            self.pieces[1].map(|b| b.flipped()),
-            self.pieces[0].map(|b| b.flipped()),
-        ]
+        [self.pieces[1].map(|b| b.flipped()), self.pieces[0].map(|b| b.flipped())]
     }
 
     pub fn apply_move(&mut self, mov: &ChessMove, side_to_move: Color, en_passant_sq: Option<ChessSquare>) {
@@ -437,6 +434,9 @@ impl ChessBoard {
     }
 
     pub fn display_ascii(&self) -> String {
+        if cfg!(debug_assertions) {
+            println!("Printing ascii");
+        }
         let mut board_str = String::new();
         board_str.push_str("  a b c d e f g h\n");
         for r in (0..8).rev() {

@@ -47,6 +47,9 @@ impl Default for ChessGame {
 
 impl ChessGame {
     pub fn from_fen(fen: &str) -> Self {
+        if cfg!(debug_assertions) {
+            println!("im from_fen");
+        }
         let mut parts = fen.split(' ');
         let board_str = parts.next().expect("FEN missing board");
         let side_str = parts.next().expect("FEN missing side to move");
@@ -571,13 +574,23 @@ impl ChessGame {
 
         while let Some(from_sq) = bishops.pop_lsb() {
             for dir_idx in 0..4 {
-                let mut bb = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
-
-                while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
+                let mut bb = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize][dir_idx];
+                if cfg!(debug_assertions) {
+                    println!("----- from_sq: {from_sq} -------");
+                    println!("bb:\n {bb}");
+                }
+                if bb.is_empty() {
+                    break;
+                }
+                while let Some(sq) = if dir_idx < 2 { bb.pop_msb() } else { bb.pop_lsb() } {
                     if allies.is_set(sq) {
                         break;
                     }
                     let mv = ChessMove::new(from_sq, sq, None);
+                    if cfg!(debug_assertions) {
+                        let m = &mv.to_uci();
+                        println!("----- found move: {m} ---------\n\n");
+                    }
                     moves.push(mv);
                     if opps.is_set(sq) {
                         break;
@@ -589,6 +602,9 @@ impl ChessGame {
         while let Some(from_sq) = rooks.pop_lsb() {
             for dir_idx in 0..4 {
                 let mut bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
+                if bb.is_empty() {
+                    break;
+                }
 
                 while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
                     if allies.is_set(sq) {
@@ -610,6 +626,9 @@ impl ChessGame {
             for dir_mask_set in [bishop_attacks, rook_attacks] {
                 for dir_idx in 0..4 {
                     let mut bb = dir_mask_set[dir_idx] & self.chessboard.all_pieces;
+                    if bb.is_empty() {
+                        break;
+                    }
 
                     while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
                         if allies.is_set(sq) {

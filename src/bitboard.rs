@@ -1,5 +1,3 @@
-use wide::u16x8;
-
 use super::ChessSquare;
 use std::fmt;
 
