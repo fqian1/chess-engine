@@ -117,7 +117,7 @@ impl ChessSquare {
         Color::Black
     }
 
-    pub fn to_name(self) -> String {
+    pub fn to_name(&self) -> String {
         let file = (b'a' + self.file()) as char;
         let rank = (b'1' + self.rank()) as char;
         format!("{file}{rank}")
@@ -137,6 +137,13 @@ impl ChessSquare {
 
     pub fn square_south(self) -> Option<ChessSquare> {
         ChessSquare::new(self.0 - 8)
+    }
+
+    pub fn square_opposite(&self) -> ChessSquare {
+        let rank = self.rank();
+        let file = self.file();
+        let flipped_rank = 8 - rank;
+        ChessSquare::from_coords(file, flipped_rank).unwrap()
     }
 
     pub fn index(&self) -> u8 {
