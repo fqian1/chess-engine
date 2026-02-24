@@ -601,7 +601,7 @@ impl ChessGame {
 
         while let Some(from_sq) = rooks.pop_lsb() {
             for dir_idx in 0..4 {
-                let mut bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize][dir_idx] & self.chessboard.all_pieces;
+                let mut bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize][dir_idx];
                 if bb.is_empty() {
                     break;
                 }
@@ -625,7 +625,7 @@ impl ChessGame {
 
             for dir_mask_set in [bishop_attacks, rook_attacks] {
                 for dir_idx in 0..4 {
-                    let mut bb = dir_mask_set[dir_idx] & self.chessboard.all_pieces;
+                    let mut bb = dir_mask_set[dir_idx];
                     if bb.is_empty() {
                         break;
                     }
