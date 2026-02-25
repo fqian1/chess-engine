@@ -29,7 +29,7 @@ impl Color {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Hash, Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(usize)]
 pub enum PieceType {
     Pawn = 0,
