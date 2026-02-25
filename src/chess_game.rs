@@ -572,75 +572,43 @@ impl ChessGame {
             }
         }
 
-        while let Some(from_sq) = bishops.pop_lsb() {
-            for dir_idx in 0..4 {
-                let mut bb = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize][dir_idx];
-                if cfg!(debug_assertions) {
-                    println!("----- from_sq: {from_sq} -------");
-                    println!("bb:\n {bb}");
-                }
-                if bb.is_empty() {
-                    break;
-                }
-                while let Some(sq) = if dir_idx < 2 { bb.pop_msb() } else { bb.pop_lsb() } {
-                    if allies.is_set(sq) {
-                        break;
+        let mut move_pusher = |from_sq: ChessSquare, ray_bb: [Bitboard; 4]| {
+            let mut ray = Bitboard::EMPTY;
+            for i in 0..4 {
+                let mut blockers = ray_bb[i] & self.chessboard.all_pieces;
+                if blockers.is_empty() {
+                    ray |= ray_bb[i]
+                } else {
+                    let to_sq = if i < 2 { blockers.pop_msb() } else { blockers.pop_lsb() };
+                    let to_sq = to_sq.expect("No to_sq found in blockers");
+                    if opps.is_set(to_sq) {
+                        ray.set(to_sq);
                     }
-                    let mv = ChessMove::new(from_sq, sq, None);
-                    if cfg!(debug_assertions) {
-                        let m = &mv.to_uci();
-                        println!("----- found move: {m} ---------\n\n");
-                    }
-                    moves.push(mv);
-                    if opps.is_set(sq) {
-                        break;
-                    }
-                }
+                    // for some reason, i made all empty bitboards None, when adjacent squares
+                    // should be empty instead, so i have to use unwrap or default
+                    ray |= ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap_or_default()
+                };
             }
+            while let Some(to_sq) = ray.pop_lsb() {
+                moves.push(ChessMove::new(from_sq, to_sq, None));
+            }
+        };
+
+        while let Some(from_sq) = bishops.pop_lsb() {
+            let ray_bb = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize];
+            move_pusher(from_sq, ray_bb);
         }
 
         while let Some(from_sq) = rooks.pop_lsb() {
-            for dir_idx in 0..4 {
-                let mut bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize][dir_idx];
-                if bb.is_empty() {
-                    break;
-                }
-
-                while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
-                    if allies.is_set(sq) {
-                        break;
-                    }
-                    let mv = ChessMove::new(from_sq, sq, None);
-                    moves.push(mv);
-                    if opps.is_set(sq) {
-                        break;
-                    }
-                }
-            }
+            let ray_bb = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize];
+            move_pusher(from_sq, ray_bb);
         }
 
         while let Some(from_sq) = queens.pop_lsb() {
-            let bishop_attacks = &ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize];
-            let rook_attacks = &ChessBoard::ROOK_ATTACKS[from_sq.0 as usize];
-
-            for dir_mask_set in [bishop_attacks, rook_attacks] {
-                for dir_idx in 0..4 {
-                    let mut bb = dir_mask_set[dir_idx];
-                    if bb.is_empty() {
-                        break;
-                    }
-
-                    while let Some(sq) = if dir_idx == 2 { bb.pop_msb() } else { bb.pop_lsb() } {
-                        if allies.is_set(sq) {
-                            break;
-                        }
-                        moves.push(ChessMove::new(from_sq, sq, None));
-                        if opps.is_set(sq) {
-                            break;
-                        }
-                    }
-                }
-            }
+            let rooks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize];
+            let bishops = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize];
+            move_pusher(from_sq, rooks);
+            move_pusher(from_sq, bishops);
         }
 
         if let Some(from_sq) = king.pop_lsb() {
