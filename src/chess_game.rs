@@ -47,9 +47,6 @@ impl Default for ChessGame {
 
 impl ChessGame {
     pub fn from_fen(fen: &str) -> Self {
-        if cfg!(debug_assertions) {
-            println!("im from_fen");
-        }
         let mut parts = fen.split(' ');
         let board_str = parts.next().expect("FEN missing board");
         let side_str = parts.next().expect("FEN missing side to move");
