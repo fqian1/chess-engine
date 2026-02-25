@@ -75,6 +75,7 @@ impl Bitboard {
         if self.is_empty() {
             None
         } else {
+            // Standard LSB lookup
             Some(ChessSquare(self.0.trailing_zeros() as u8))
         }
     }
@@ -83,20 +84,23 @@ impl Bitboard {
         if self.is_empty() {
             None
         } else {
-            Some(ChessSquare(self.0.leading_zeros() as u8))
+            // 63 minus leading zeros gives the correct 0-63 index
+            Some(ChessSquare(63 - self.0.leading_zeros() as u8))
         }
     }
 
-    pub fn pop_msb(&mut self) -> Option<ChessSquare> {
-        let square = self.msb_square()?;
+    pub fn pop_lsb(&mut self) -> Option<ChessSquare> {
+        let sq = self.lsb_square()?;
+        // This shortcut is actually fine for LSB specifically
         self.0 &= self.0 - 1;
-        Some(square)
+        Some(sq)
     }
 
-    pub fn pop_lsb(&mut self) -> Option<ChessSquare> {
-        let square = self.lsb_square()?;
-        self.0 &= self.0 - 1;
-        Some(square)
+    pub fn pop_msb(&mut self) -> Option<ChessSquare> {
+        let sq = self.msb_square()?;
+        // Use XOR with the specific bit to clear it
+        self.0 ^= 1 << sq.0;
+        Some(sq)
     }
 
     pub fn shift_north(self) -> Self {
