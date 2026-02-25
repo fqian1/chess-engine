@@ -69,7 +69,7 @@ impl ChessGame {
                     file = 0;
                 }
                 '1'..='8' => {
-                    file += c.to_digit(10).unwrap() as u8;
+                    file += c.to_digit(10).expect("from_fen") as u8;
                 }
                 _ => {
                     let color = if c.is_uppercase() { Color::White } else { Color::Black };
@@ -100,7 +100,7 @@ impl ChessGame {
         let mut board = ChessBoard::empty();
         for (index, piece_option) in board_array.into_iter().enumerate() {
             if let Some(piece) = piece_option {
-                board.add_piece(piece, ChessSquare::new(index as u8).unwrap());
+                board.add_piece(piece, ChessSquare::new(index as u8).expect("from_fen"));
             }
         }
 
@@ -480,7 +480,7 @@ impl ChessGame {
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
         let mut king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
-        let king_sq = king_bb.pop_lsb().unwrap();
+        let king_sq = king_bb.pop_lsb().expect("is_legal says: no king?");
 
         if temp_board.is_square_attacked(king_sq, self.side_to_move.opposite()) {
             return false;
