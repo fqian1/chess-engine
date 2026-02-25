@@ -212,28 +212,32 @@ impl ChessBoard {
             let file = i % 8;
             let rank = i / 8;
 
-            let mut r = rank + 1;
-            while r < 8 {
-                boards[i][0].set(ChessSquare((r * 8 + file) as u8));
-                r += 1;
-            }
-
+            // South -> msb
             let mut r = rank as i8 - 1;
             while r >= 0 {
-                boards[i][1].set(ChessSquare((r as usize * 8 + file) as u8));
+                boards[i][0].set(ChessSquare((r as usize * 8 + file) as u8));
                 r -= 1;
             }
 
-            let mut f = file + 1;
-            while f < 8 {
-                boards[i][2].set(ChessSquare((rank * 8 + f) as u8));
-                f += 1;
-            }
-
+            // West -> msb
             let mut f = file as i8 - 1;
             while f >= 0 {
-                boards[i][3].set(ChessSquare((rank * 8 + f as usize) as u8));
+                boards[i][1].set(ChessSquare((rank * 8 + f as usize) as u8));
                 f -= 1;
+            }
+
+            // North -> lsb
+            let mut r = rank + 1;
+            while r < 8 {
+                boards[i][2].set(ChessSquare((r * 8 + file) as u8));
+                r += 1;
+            }
+
+            // East -> lsb
+            let mut f = file + 1;
+            while f < 8 {
+                boards[i][3].set(ChessSquare((rank * 8 + f) as u8));
+                f += 1;
             }
 
             i += 1;
@@ -249,24 +253,28 @@ impl ChessBoard {
             let file = i % 8;
             let rank = i / 8;
 
+            // SOUTH WEST -> msb
             let mut j = 1;
             while file >= j && rank >= j {
                 boards[i][0].set(ChessSquare(((rank - j) * 8 + (file - j)) as u8));
                 j += 1;
             }
 
+            // SOUTH EAST -> msb
             j = 1;
             while file + j < 8 && rank >= j {
                 boards[i][1].set(ChessSquare(((rank - j) * 8 + (file + j)) as u8));
                 j += 1;
             }
 
+            // NORTH EAST -> lsb
             j = 1;
             while file + j < 8 && rank + j < 8 {
                 boards[i][2].set(ChessSquare(((rank + j) * 8 + (file + j)) as u8));
                 j += 1;
             }
 
+            // NORTH WEST -> lsb
             j = 1;
             while file >= j && rank + j < 8 {
                 boards[i][3].set(ChessSquare(((rank + j) * 8 + (file - j)) as u8));
@@ -285,9 +293,9 @@ impl ChessBoard {
     pub const KING_ATTACKS: [Bitboard; 64] = Self::generate_king_attacks();
     pub const PAWN_ATTACKS_WHITE: [Bitboard; 64] = Self::generate_white_pawn_attacks();
     pub const PAWN_ATTACKS_BLACK: [Bitboard; 64] = Self::generate_black_pawn_attacks();
-    // NORTH EAST SOUTH WEST
+    // SOUTH, WEST, NORTH, EAST
     pub const ROOK_ATTACKS: [[Bitboard; 4]; 64] = Self::generate_rook_direction_masks();
-    // NW NE SE SW
+    // SW, SE, NE, NW
     pub const BISHOP_ATTACKS: [[Bitboard; 4]; 64] = Self::generate_bishop_direction_masks();
 
     pub const BETWEEN: [[Option<Bitboard>; 64]; 64] = Self::generate_between();
