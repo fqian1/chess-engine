@@ -527,17 +527,23 @@ impl ChessGame {
 
             if let Some(to_sq) = square_ahead {
                 if !self.chessboard.all_pieces.is_set(to_sq) {
+                    if cfg!(debug_assertions) {
+                        println!("Single push: {}", to_sq);
+                    }
                     add_move(&mut moves, from_sq, to_sq);
-                }
-                if from_sq.rank() == rank_2 {
-                    let square_ahead = if self.side_to_move == Color::White {
-                        to_sq.square_north()
-                    } else {
-                        to_sq.square_south()
-                    };
-                    if let Some(to_sq) = square_ahead {
-                        if !self.chessboard.all_pieces.is_set(to_sq) {
-                            moves.push(ChessMove::new(from_sq, to_sq, None));
+                    if from_sq.rank() == rank_2 {
+                        let square_ahead = if self.side_to_move == Color::White {
+                            to_sq.square_north()
+                        } else {
+                            to_sq.square_south()
+                        };
+                        if let Some(to_sq) = square_ahead {
+                            if !self.chessboard.all_pieces.is_set(to_sq) {
+                                if cfg!(debug_assertions) {
+                                    println!("Double push: {}", to_sq);
+                                }
+                                moves.push(ChessMove::new(from_sq, to_sq, None));
+                            }
                         }
                     }
                 }
@@ -573,12 +579,22 @@ impl ChessGame {
             let mut ray = Bitboard::EMPTY;
             for i in 0..4 {
                 let mut blockers = ray_bb[i] & self.chessboard.all_pieces;
+                if cfg!(debug_assertions) {
+                    // println!("from_sq: {}\nray: {}\nblocker: {}", from_sq, ray_bb[i], blockers);
+                    // println!("blockers: {}\n all_pieces: {}",blockers, self.chessboard.all_pieces);
+                }
                 if blockers.is_empty() {
                     ray |= ray_bb[i]
                 } else {
                     let to_sq = if i < 2 { blockers.pop_msb() } else { blockers.pop_lsb() };
                     let to_sq = to_sq.expect("No to_sq found in blockers");
                     if opps.is_set(to_sq) {
+                        if cfg!(debug_assertions) {
+                            println!(
+                                "from_sq: {}\nblockers:\n{}\nray:\n {}\nto_sq: {}",
+                                from_sq, ray_bb[i], blockers, to_sq
+                            );
+                        }
                         ray.set(to_sq);
                     }
                     // for some reason, i made all empty bitboards None, when adjacent squares
@@ -614,7 +630,8 @@ impl ChessGame {
                 moves.push(ChessMove::new(from_sq, sq, None));
             }
             let clear = |from: ChessSquare, to: ChessSquare| -> bool {
-                let mut between = ChessBoard::BETWEEN[from.0 as usize][to.0 as usize].unwrap();
+                let mut between =
+                    ChessBoard::BETWEEN[from.0 as usize][to.0 as usize].expect("failed to find between sq castling");
                 // If no blockers
                 if (between & self.chessboard.all_pieces).is_empty() {
                     // If no squares in check (castling into check is pseudo legal, but not
