@@ -2,6 +2,7 @@ use burn::{Tensor, prelude::Backend};
 
 use super::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Unfinished,
     Finished(Option<Color>),
@@ -16,14 +17,17 @@ pub enum RuleSet {
 #[derive(Debug, Clone)]
 pub struct GameStateEntry {
     pub chessboard: ChessBoard,
-    pub move_made: ChessMove,
     pub side_to_move: Color,
-    pub captured_piece: Option<ChessPiece>,
     pub castling_rights: CastlingRights,
     pub en_passant: Option<ChessSquare>,
     pub halfmove_clock: u32,
     pub fullmove_counter: u32,
     pub zobrist_hash: u64,
+    pub value: f32,
+    // network outputs
+    pub move_made: ChessMove,
+    pub value_predicted: (f32, f32, Option<f32>),
+    pub moves_left_estimate: ([u8; 10],[u8; 10],Option<[u8; 10]>)
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +41,7 @@ pub struct ChessGame {
     pub game_history: Vec<GameStateEntry>,
     pub zobrist_hash: u64,
     pub rule_set: RuleSet,
+    pub outcome: Option<Outcome>,
 }
 
 impl Default for ChessGame {
@@ -114,6 +119,7 @@ impl ChessGame {
             game_history: Vec::new(),
             zobrist_hash: 0,
             rule_set: RuleSet::Legal,
+            outcome: None,
         }
     }
 
@@ -720,11 +726,6 @@ impl ChessGame {
             chessboard: self.chessboard.clone(),
             move_made: mov.clone(),
             side_to_move: self.side_to_move,
-            captured_piece: if is_en_passant {
-                Some(ChessPiece::new(self.side_to_move.opposite(), PieceType::Pawn))
-            } else {
-                captured_piece
-            },
             castling_rights: self.castling_rights,
             en_passant: self.en_passant,
             halfmove_clock: self.halfmove_clock,
@@ -832,47 +833,47 @@ impl ChessGame {
     }
 
     // not needed, cloning bitboards instead
-    pub fn unmake_move(&mut self) {
-        let entry = self.game_history.pop().expect("No history to unmake");
-        let mov = entry.move_made;
-        self.side_to_move = entry.side_to_move;
-        self.castling_rights = entry.castling_rights;
-        self.en_passant = entry.en_passant;
-        self.halfmove_clock = entry.halfmove_clock;
-        self.fullmove_counter = entry.fullmove_counter;
-
-        let current_piece = self.chessboard.get_piece_at(mov.to).expect("chessboard desync: Piece missing on unmake");
-
-        if mov.promotion.is_some() {
-            self.chessboard.remove_piece(current_piece, mov.to);
-            let pawn = ChessPiece { color: self.side_to_move, piece_type: PieceType::Pawn };
-            self.chessboard.add_piece(pawn, mov.from);
-        } else {
-            self.chessboard.move_piece(mov.to, mov.from, current_piece);
-        }
-
-        if let Some(cap_piece) = entry.captured_piece {
-            let mut cap_sq = mov.to;
-            if current_piece.piece_type == PieceType::Pawn && entry.en_passant == Some(mov.to) {
-                cap_sq = ChessSquare::from_coords(mov.to.file(), mov.from.rank()).unwrap();
-            }
-            self.chessboard.add_piece(cap_piece, cap_sq);
-        }
-
-        if current_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2 {
-            let (rook_now, rook_orig) = match mov.to {
-                ChessSquare::G1 => (ChessSquare::F1, ChessSquare::H1),
-                ChessSquare::C1 => (ChessSquare::D1, ChessSquare::A1),
-                ChessSquare::G8 => (ChessSquare::F8, ChessSquare::H8),
-                ChessSquare::C8 => (ChessSquare::D8, ChessSquare::A8),
-                _ => panic!("Invalid castle unmake state"),
-            };
-
-            let rook = self.chessboard.get_piece_at(rook_now).expect("Rook missing in un-castle");
-
-            self.chessboard.move_piece(rook_now, rook_orig, rook);
-        }
-    }
+    // pub fn unmake_move(&mut self) {
+    //     let entry = self.game_history.pop().expect("No history to unmake");
+    //     let mov = entry.move_made;
+    //     self.side_to_move = entry.side_to_move;
+    //     self.castling_rights = entry.castling_rights;
+    //     self.en_passant = entry.en_passant;
+    //     self.halfmove_clock = entry.halfmove_clock;
+    //     self.fullmove_counter = entry.fullmove_counter;
+    //
+    //     let current_piece = self.chessboard.get_piece_at(mov.to).expect("chessboard desync: Piece missing on unmake");
+    //
+    //     if mov.promotion.is_some() {
+    //         self.chessboard.remove_piece(current_piece, mov.to);
+    //         let pawn = ChessPiece { color: self.side_to_move, piece_type: PieceType::Pawn };
+    //         self.chessboard.add_piece(pawn, mov.from);
+    //     } else {
+    //         self.chessboard.move_piece(mov.to, mov.from, current_piece);
+    //     }
+    //
+    //     if let Some(cap_piece) = entry.captured_piece {
+    //         let mut cap_sq = mov.to;
+    //         if current_piece.piece_type == PieceType::Pawn && entry.en_passant == Some(mov.to) {
+    //             cap_sq = ChessSquare::from_coords(mov.to.file(), mov.from.rank()).unwrap();
+    //         }
+    //         self.chessboard.add_piece(cap_piece, cap_sq);
+    //     }
+    //
+    //     if current_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2 {
+    //         let (rook_now, rook_orig) = match mov.to {
+    //             ChessSquare::G1 => (ChessSquare::F1, ChessSquare::H1),
+    //             ChessSquare::C1 => (ChessSquare::D1, ChessSquare::A1),
+    //             ChessSquare::G8 => (ChessSquare::F8, ChessSquare::H8),
+    //             ChessSquare::C8 => (ChessSquare::D8, ChessSquare::A8),
+    //             _ => panic!("Invalid castle unmake state"),
+    //         };
+    //
+    //         let rook = self.chessboard.get_piece_at(rook_now).expect("Rook missing in un-castle");
+    //
+    //         self.chessboard.move_piece(rook_now, rook_orig, rook);
+    //     }
+    // }
 
     pub fn check_game_state(&self) -> Outcome {
         // PseudoLegal and Legal Checks
@@ -959,5 +960,58 @@ impl ChessGame {
         }
 
         Outcome::Unfinished
+    }
+}
+
+impl GameStateEntry {
+    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> (Tensor<B, 3>, Tensor<B, 1>) {
+        let mut data = [[0f32; 64]; 14];
+
+        let (chess_board, castling_rights, ep_sq) = if self.side_to_move == Color::White {
+            (self.chessboard.pieces, self.castling_rights, self.en_passant)
+        } else {
+            (
+                self.chessboard.flip_board(),
+                self.castling_rights.flip_perspective(),
+                self.en_passant.map(|x| x.square_opposite()),
+            )
+        };
+        let mut flat = [Bitboard::default(); 12];
+
+        flat[..6].copy_from_slice(&chess_board[0]);
+        flat[6..].copy_from_slice(&chess_board[1]);
+
+        for i in 0..12 {
+            data[i] = flat[i].to_f32();
+        }
+
+        if let Some(square) = ep_sq {
+            data[12][square.0 as usize] = 1.0;
+        }
+
+        let ChessMove{from: from_sq, to: to_sq, promotion: prom} = self.move_made;
+
+        data[13][from_sq.0 as usize] = 1.0;
+        data[13][to_sq.0 as usize] = 1.0;
+        if let Some(piece) = prom {
+            let rank = match piece {
+                PieceType::Knight => 4,
+                PieceType::Bishop => 5,
+                PieceType::Rook => 6,
+                PieceType::Queen => 7,
+                _ => 0,
+            };
+            data[13][to_sq.file() as usize + rank*8] = 1.0;
+        }
+
+        let t1 = Tensor::from_data(data, device);
+
+        let mut data = [0.0f32; 4];
+        for i in 0..4 {
+            data[i] = (castling_rights.0 >> i & 1).into();
+        }
+
+        let t2 = Tensor::from_data(data, device);
+        (t1, t2)
     }
 }
