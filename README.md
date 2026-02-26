@@ -25,16 +25,6 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
     ```
     You can then enter moves in UCI format (e.g., `e2e4`).
 
-## Roadmap and TODO List
-
-### Core Engine Improvements
-- [ ] Implement check detection.
-- [ ] Implement checkmate and stalemate detection.
-- [ ] Implement full legal move generation functions.
-- [ ] Add `perft` testing to ensure move generation is accurate.
-- [ ] Implement Zobrist hashing for efficient position tracking and repetition detection.
-- [ ] Parallelize play to run multiple games simultaneously.
-
 ### Train neural network
 
 #### Data Collection & Preparation
@@ -42,25 +32,21 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
 - [ ] Implement a system to serialize and save game data.
 - [ ] Generate a dataset by running self-play games (reinforcement learning).
 
-#### Model Architecture (using Burn)
-- [ ] Design a Transformer architecture for board evaluation. Self attention for each square. input 12 or 15 bitboards? half move counter, normalised between 0-1 (half move counter / 100). give it last 8 chessboard states.
-- [ ] Implement the network with Burn; Input: Bitboards of game state + Some(Square coords) and Output: Square coords.
-- [ ] 
-
 #### Training
 - [ ] Set up a training pipeline using `burn`.
 - [ ] Implement a training loop to feed game data to the model.
 - [ ] Choose and implement a loss function (e.g., cross-entropy for move prediction, mean squared error for evaluation).
 - [ ] Select and configure an optimizer (e.g., Adam).
-- [ ] Parallelize the training process.
 
 ```
 # model architecture
 inputs:
- - 8x8x14 tensor: 8x8 grid, 12 1 hot planes for pieces, 1 hot plane for en passant, 0/1/2 hot plane for move (0 hot when picking from_sq, 1 hot when picking to_sq, 2 hot when picking promotion piece, just populate the squares)
+ - 64x14 tensor: 8x8 grid, 12 1 hot planes for pieces, 1 hot plane for en passant, 0/1/2 hot plane for move (0 hot when picking from_sq, 1 hot when picking to_sq, 2 hot when picking promotion piece, just populate the squares)
  - 1x5 tensor: 4x1 hot castling rights, 1 scalar for 50 move rule. no 3 fold repetition (handle with contempt + search tree)
+encoder:
+ - project into embedding dimension. add positional encodings x and y, d_model x 1, d_model x 1, broadcast vertically and horizonally and sum.
 outputs:
- - policy: 8x8 grid, used for from_sq, to_sq and promotion_piece. binary cross entropy loss function, softmax activation (add mask before for pseudo legal)
+ - policy: 8x8 grid, used for from_sq, to_sq and promotion_piece. binary cross entropy loss function, softmax activation (add mask before for legal)
  - value: scalar. tanh activation, mse loss.
  - moves_left: 10x1 scalar, where each scalar represents bucket 1-10, 11-20, 21-30 moves left etc. allows to represent sharp positions (e.g. both small and big buckets)
 
