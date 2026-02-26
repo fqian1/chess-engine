@@ -143,6 +143,21 @@ impl Bitboard {
         (0..64).map(|x| ((self.0 >> x) & 1) as f32).collect::<Vec<f32>>().try_into().unwrap()
     }
 
+    // pub fn to_f32(&self) -> [[f32; 8]; 8] {
+    //     let mut matrix = [[0.0; 8]; 8];
+    //
+    //     for i in 0..64 {
+    //         let bit = (self.0 >> i) & 1;
+    //         let float_val = bit as f32;
+    //         let row = 7 - (i / 8);
+    //         let col = i % 8;
+    //
+    //         matrix[row][col] = float_val;
+    //     }
+    //
+    //     matrix
+    // }
+
     pub fn flipped(&self) -> Bitboard {
         Bitboard(
             (self.0 << 56)
