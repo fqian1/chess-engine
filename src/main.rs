@@ -12,29 +12,33 @@ pub struct TrainingMetrics {
     pub unique_positions_seen: u32,
 }
 
+pub fn display_moves(moves: &Vec<ChessMove>) {
+    for mv in moves {
+        println!("{}", mv.to_uci());
+    }
+}
+
 fn main() {
-    type MyBackend = Wgpu<f32, i32>;
+    // type MyBackend = Wgpu<f32, i32>;
 
-    let size = model_size * 4;
-    let n_heads = size;
-    let n_layers = size;
-    let d_model = n_heads * 64;
-    let d_ff = 4 * d_model;
+    // let size = model_size * 4;
+    // let n_heads = size;
+    // let n_layers = size;
+    // let d_model = n_heads * 64;
+    // let d_ff = 4 * d_model;
+    //
 
-
-    let device = Default::default();
-    let model = ModelConfig::new(10, 512).init::<MyBackend>(&device);
-    println!("{model}");
+    let mut game = ChessGame::default();
+    game.zobrist_hash = game.calculate_hash();
 
     let mut chessgames: Vec<ChessGame> = vec![ChessGame::default(); 80];
     chessgames.iter_mut().for_each(|game| {
         game.zobrist_hash = game.calculate_hash()
     });
 
-    loop {
-
-    }
-
+    let moves: Vec<ChessMove> = game.generate_pseudolegal().into_iter().collect();
+    display_moves(&moves);
+    println!("{}", game.chessboard.display_ascii());
     // loop
     // 1. convert to transformer representation
     // 2. check game state
