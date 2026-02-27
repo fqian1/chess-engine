@@ -1,6 +1,7 @@
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(usize)]
 pub enum Color {
+    #[default]
     White = 0,
     Black = 1,
 }

@@ -2,7 +2,7 @@ use super::Bitboard;
 use super::Color;
 use std::fmt;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 pub struct ChessSquare(pub u8);
 
 impl ChessSquare {
