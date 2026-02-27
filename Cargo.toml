@@ -9,3 +9,4 @@ rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [dependencies]
 burn = { version = "0.21.0-pre.1", features = ["std", "tui", "train","wgpu", "fusion", "cuda", "ndarray"], default-features = false }
+rayon = "1.11.0"

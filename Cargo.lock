@@ -725,6 +725,7 @@ name = "chess-engine"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "rayon",
 ]
 
 [[package]]
