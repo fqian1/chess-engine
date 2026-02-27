@@ -14,8 +14,15 @@ pub enum RuleSet {
     PseudoLegal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
+pub struct ModelOutputs {
+    pub policy: ChessSquare,
+    pub value: f32,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct GameStateEntry {
+    // game state
     pub chessboard: ChessBoard,
     pub side_to_move: Color,
     pub castling_rights: CastlingRights,
@@ -25,9 +32,7 @@ pub struct GameStateEntry {
     pub zobrist_hash: u64,
     pub value: f32,
     // network outputs
-    pub move_made: ChessMove,
-    pub value_predicted: (f32, f32, Option<f32>),
-    pub moves_left_estimate: ([u8; 10],[u8; 10],Option<[u8; 10]>)
+    pub outputs: [Option<ModelOutputs>;3],
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +47,7 @@ pub struct ChessGame {
     pub zobrist_hash: u64,
     pub rule_set: RuleSet,
     pub outcome: Option<Outcome>,
+    pub pseudolegal_moves: Vec<ChessMove>,
 }
 
 impl Default for ChessGame {
@@ -120,6 +126,7 @@ impl ChessGame {
             zobrist_hash: 0,
             rule_set: RuleSet::Legal,
             outcome: None,
+            pseudolegal_moves: Vec::new()
         }
     }
 
@@ -495,7 +502,7 @@ impl ChessGame {
         }
     }
 
-    pub fn generate_pseudolegal(&self) -> Vec<ChessMove> {
+    pub fn generate_pseudolegal(&mut self) {
         let mut moves: Vec<ChessMove> = Vec::new();
 
         let (allies, opps) = match self.side_to_move {
@@ -682,12 +689,11 @@ impl ChessGame {
                 }
             }
         }
-        moves
+        self.pseudolegal_moves = moves
     }
 
     pub fn is_valid(&self, mov: &ChessMove) -> bool {
-        let pseudolegal_moves = self.generate_pseudolegal();
-        if pseudolegal_moves.contains(mov) {
+        if self.pseudolegal_moves.contains(mov) {
             if self.rule_set == RuleSet::PseudoLegal {
                 return true;
             } else if self.is_legal(mov) {
@@ -698,11 +704,11 @@ impl ChessGame {
     }
 
     pub fn get_possible_from_squares(&self) -> Vec<ChessSquare> {
-        self.generate_pseudolegal().clone().into_iter().map(|mov| mov.from).collect()
+        self.pseudolegal_moves.clone().into_iter().map(|mov| mov.from).collect()
     }
 
     pub fn get_possible_to_squares(&self, from_square: &ChessSquare) -> Vec<ChessSquare> {
-        self.generate_pseudolegal()
+        self.pseudolegal_moves
             .clone()
             .into_iter()
             .filter(|mov| mov.from == *from_square)
@@ -724,13 +730,13 @@ impl ChessGame {
 
         self.game_history.push(GameStateEntry {
             chessboard: self.chessboard.clone(),
-            move_made: mov.clone(),
             side_to_move: self.side_to_move,
             castling_rights: self.castling_rights,
             en_passant: self.en_passant,
             halfmove_clock: self.halfmove_clock,
             fullmove_counter: self.fullmove_counter,
             zobrist_hash: self.zobrist_hash,
+            ..Default::default()
         });
 
         // Remove Old Global State from Hash
@@ -907,8 +913,9 @@ impl ChessGame {
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
         // Safe, king must exist otherwise wouldve returned earlier
         let king_sq = king_bb.pop_lsb().unwrap();
-        let mut legal_moves = self.generate_pseudolegal();
+        let mut legal_moves = self.pseudolegal_moves.clone();
         legal_moves.retain(|x| self.is_legal(x));
+
         if legal_moves.is_empty() {
             if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
                 return Outcome::Finished(Some(self.side_to_move.opposite()));
@@ -961,6 +968,36 @@ impl ChessGame {
 
         Outcome::Unfinished
     }
+
+    pub fn board_to_tensor<B: Backend>(&self, device: &B::Device) -> (Tensor<B, 2>, Tensor<B, 1>) {
+        let (chess_board, castling_rights, ep_sq) = if self.side_to_move == Color::White {
+            (self.chessboard.pieces, self.castling_rights, self.en_passant)
+        } else {
+            (
+                self.chessboard.flip_board(),
+                self.castling_rights.flip_perspective(),
+                self.en_passant.map(|x| x.square_opposite()),
+            )
+        };
+        self.chessboard.to_tensor(device, ep_sq, from_sq, to_sq, promotion)
+
+        flat[..6].copy_from_slice(&chess_board[0]);
+        flat[6..].copy_from_slice(&chess_board[1]);
+
+        for i in 0..12 {
+            data[i] = flat[i].to_f32();
+        }
+
+        let t1 = Tensor::from_data(data, device);
+
+        let mut data = [0.0f32; 4];
+        for i in 0..4 {
+            data[i] = (castling_rights.0 >> i & 1).into();
+        }
+
+        let t2 = Tensor::from_data(data, device);
+        (t1, t2)
+    }
 }
 
 impl GameStateEntry {
@@ -1006,12 +1043,7 @@ impl GameStateEntry {
 
         let t1 = Tensor::from_data(data, device);
 
-        let mut data = [0.0f32; 4];
-        for i in 0..4 {
-            data[i] = (castling_rights.0 >> i & 1).into();
-        }
 
-        let t2 = Tensor::from_data(data, device);
         (t1, t2)
     }
 }
