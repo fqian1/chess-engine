@@ -65,13 +65,6 @@ impl CastlingRights {
         *self &= !rights_to_remove;
     }
 
-    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> Tensor<B, 1> {
-        let mut data = [0.0f32; 4];
-        for i in 0..4 {
-            data[i] = (self.0 >> i & 1).into();
-        }
-        Tensor::from_data(data, device)
-    }
 }
 
 // Implement bitwise operations
