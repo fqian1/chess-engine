@@ -139,8 +139,15 @@ impl Bitboard {
         *self = self.flipped();
     }
 
-    pub fn to_f32(self) -> [f32; 64] {
-        (0..64).map(|x| ((self.0 >> x) & 1) as f32).collect::<Vec<f32>>().try_into().unwrap()
+    pub fn write_to_slice(&self, slice: &mut [f32]) {
+        let mut bb = self.0;
+        while bb != 0 {
+            let lsb = bb.trailing_zeros();
+            if let Some(val) = slice.get_mut(lsb as usize) {
+                *val = 1.0;
+            }
+            bb &= bb - 1;
+        }
     }
 
     // pub fn to_f32(&self) -> [[f32; 8]; 8] {
