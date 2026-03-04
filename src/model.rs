@@ -1,6 +1,7 @@
 use burn::{
     nn::{
         Embedding, EmbeddingConfig, Linear, LinearConfig,
+        loss::CrossEntropyLossConfig,
         transformer::{TransformerEncoder, TransformerEncoderConfig, TransformerEncoderInput},
     },
     prelude::*,
@@ -17,6 +18,7 @@ pub struct ChessTransformer<B: Backend> {
     policy: Linear<B>, // Just pick one square
     value: Linear<B>,
     d_model: usize,
+    masked: bool,
 }
 
 #[derive(Config, Debug)]
@@ -28,7 +30,7 @@ pub struct ChessTransformerConfig {
 }
 
 impl ChessTransformerConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> ChessTransformer<B> {
+    pub fn init<B: Backend>(&self, device: &B::Device, masked: bool) -> ChessTransformer<B> {
         ChessTransformer {
             piece_encoder: LinearConfig::new(14, self.d_model).init(device),
             meta_encoder: LinearConfig::new(5, self.d_model).init(device),
@@ -40,13 +42,14 @@ impl ChessTransformerConfig {
             policy: LinearConfig::new(self.d_model, 1).init(device),
             value: LinearConfig::new(self.d_model, 1).init(device),
             d_model: self.d_model,
+            masked,
         }
     }
 }
 
 impl<B: Backend> ChessTransformer<B> {
     pub fn forward(&self, board: Tensor<B, 3>, meta: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let [batch_size, seq_len, _] = board.dims();
+        let [batch_size, _seq_len, _] = board.dims();
 
         // batchsize x 64 x d_model
         let mut x = self.piece_encoder.forward(board);
@@ -76,5 +79,21 @@ impl<B: Backend> ChessTransformer<B> {
         let policy = self.policy.forward(board_latent).squeeze_dim(2);
 
         (policy, value)
+    }
+
+    fn compute_loss(
+        &self,
+        policy_logit: Tensor<B, 2>,
+        value_pred: Tensor<B, 1>,
+        target_policy: Tensor<B, 2>,
+        target_value: Tensor<B, 1>,
+        mask: Option<Tensor<B, 2, Bool>>,
+    ) {
+        let loss_policy =
+            CrossEntropyLossConfig::new().init(&policy_logit.device()).
+        let loss = loss_policy.fo
+
+        let alpha = 1.0;
+        loss_policy.mul_scalar(alpha).add(loss_value)
     }
 }
