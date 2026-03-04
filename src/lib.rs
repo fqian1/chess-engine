@@ -10,10 +10,13 @@ pub mod chess_piece;
 pub mod chess_square;
 pub mod engine;
 pub mod zobrist;
+pub mod model;
+pub mod data;
+pub mod training;
 
+pub use burn;
 #[doc(inline)]
 pub use bitboard::Bitboard;
-pub use burn;
 #[doc(inline)]
 pub use castling::CastlingRights;
 #[doc(inline)]
@@ -26,7 +29,9 @@ pub use chess_move::ChessMove;
 pub use chess_piece::{ChessPiece, Color, PieceType};
 #[doc(inline)]
 pub use chess_square::ChessSquare;
-#[doc(inline)]
-// pub use engine::{Model, ModelConfig};
 // #[doc(inline)]
+// pub use engine::{Model, ModelConfig};
+#[doc(inline)]
 pub use zobrist::ZobristKeys;
+pub use model::ChessTransformer;
+pub use data::ReplayBuffer;
