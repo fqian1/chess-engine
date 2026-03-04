@@ -15,14 +15,7 @@ pub enum RuleSet {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ModelOutputs {
-    pub policy: ChessSquare,
-    pub value: f32,
-}
-
-#[derive(Debug, Clone, Default)]
 pub struct GameStateEntry {
-    // game state
     pub chessboard: ChessBoard,
     pub side_to_move: Color,
     pub castling_rights: CastlingRights,
@@ -30,9 +23,6 @@ pub struct GameStateEntry {
     pub halfmove_clock: u32,
     pub fullmove_counter: u32,
     pub zobrist_hash: u64,
-    pub value: f32,
-    // network outputs
-    pub outputs: [Option<ModelOutputs>;3],
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +36,7 @@ pub struct ChessGame {
     pub game_history: Vec<GameStateEntry>,
     pub zobrist_hash: u64,
     pub rule_set: RuleSet,
-    pub outcome: Option<Outcome>,
+    pub outcome: Outcome,
     pub pseudolegal_moves: Vec<ChessMove>,
 }
 
@@ -126,7 +116,7 @@ impl ChessGame {
             zobrist_hash: 0,
             rule_set: RuleSet::Legal,
             outcome: None,
-            pseudolegal_moves: Vec::new()
+            pseudolegal_moves: Vec::new(),
         }
     }
 
@@ -708,12 +698,7 @@ impl ChessGame {
     }
 
     pub fn get_possible_to_squares(&self, from_square: &ChessSquare) -> Vec<ChessSquare> {
-        self.pseudolegal_moves
-            .clone()
-            .into_iter()
-            .filter(|mov| mov.from == *from_square)
-            .map(|mov| mov.to)
-            .collect()
+        self.pseudolegal_moves.clone().into_iter().filter(|mov| mov.from == *from_square).map(|mov| mov.to).collect()
     }
 
     // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible
@@ -969,9 +954,9 @@ impl ChessGame {
         Outcome::Unfinished
     }
 
-    pub fn board_to_tensor<B: Backend>(&self, device: &B::Device) -> (Tensor<B, 2>, Tensor<B, 1>) {
+    pub fn to_f32(&self) -> ([f32; 64 * 14], [f32; 5]) {
         let (chess_board, castling_rights, ep_sq) = if self.side_to_move == Color::White {
-            (self.chessboard.pieces, self.castling_rights, self.en_passant)
+            (self.chessboard.clone(), self.castling_rights, self.en_passant)
         } else {
             (
                 self.chessboard.flip_board(),
@@ -979,71 +964,19 @@ impl ChessGame {
                 self.en_passant.map(|x| x.square_opposite()),
             )
         };
-        self.chessboard.to_tensor(device, ep_sq, from_sq, to_sq, promotion)
+        let board = chess_board.to_f32(ep_sq);
 
-        flat[..6].copy_from_slice(&chess_board[0]);
-        flat[6..].copy_from_slice(&chess_board[1]);
-
-        for i in 0..12 {
-            data[i] = flat[i].to_f32();
-        }
-
-        let t1 = Tensor::from_data(data, device);
-
-        let mut data = [0.0f32; 4];
+        let mut meta = [0f32; 5];
         for i in 0..4 {
-            data[i] = (castling_rights.0 >> i & 1).into();
+            meta[i] = (castling_rights.0 >> i & 1).into();
         }
+        meta[4] = self.halfmove_clock as f32 / 50.0;
 
-        let t2 = Tensor::from_data(data, device);
-        (t1, t2)
+        (board, meta)
     }
-}
 
-impl GameStateEntry {
-    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> (Tensor<B, 3>, Tensor<B, 1>) {
-        let mut data = [[0f32; 64]; 14];
-
-        let (chess_board, castling_rights, ep_sq) = if self.side_to_move == Color::White {
-            (self.chessboard.pieces, self.castling_rights, self.en_passant)
-        } else {
-            (
-                self.chessboard.flip_board(),
-                self.castling_rights.flip_perspective(),
-                self.en_passant.map(|x| x.square_opposite()),
-            )
-        };
-        let mut flat = [Bitboard::default(); 12];
-
-        flat[..6].copy_from_slice(&chess_board[0]);
-        flat[6..].copy_from_slice(&chess_board[1]);
-
-        for i in 0..12 {
-            data[i] = flat[i].to_f32();
-        }
-
-        if let Some(square) = ep_sq {
-            data[12][square.0 as usize] = 1.0;
-        }
-
-        let ChessMove{from: from_sq, to: to_sq, promotion: prom} = self.move_made;
-
-        data[13][from_sq.0 as usize] = 1.0;
-        data[13][to_sq.0 as usize] = 1.0;
-        if let Some(piece) = prom {
-            let rank = match piece {
-                PieceType::Knight => 4,
-                PieceType::Bishop => 5,
-                PieceType::Rook => 6,
-                PieceType::Queen => 7,
-                _ => 0,
-            };
-            data[13][to_sq.file() as usize + rank*8] = 1.0;
-        }
-
-        let t1 = Tensor::from_data(data, device);
-
-
-        (t1, t2)
+    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> (Tensor<B, 2>, Tensor<B, 1>) {
+        let (board, meta) = self.to_f32();
+        (Tensor::<B, 2>::from_data(board, device).reshape([64, 14]), Tensor::from_data(meta, device))
     }
 }
