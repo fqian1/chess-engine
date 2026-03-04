@@ -1,5 +1,7 @@
 use burn::{Tensor, prelude::Backend};
 
+use crate::CastlingRights;
+
 use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, Default)]
@@ -373,8 +375,13 @@ impl ChessBoard {
         self.add_piece(piece, to_sq);
     }
 
-    pub fn flip_board(&self) -> [[Bitboard; 6]; 2] {
-        [self.pieces[1].map(|b| b.flipped()), self.pieces[0].map(|b| b.flipped())]
+    // pub fn flip_board(&self) -> [[Bitboard; 6]; 2] {
+    //     [self.pieces[1].map(|b| b.flipped()), self.pieces[0].map(|b| b.flipped())]
+    // }
+
+    pub fn flip_board(&self) -> Self {
+        let pieces = [self.pieces[1].map(|b| b.flipped()), self.pieces[0].map(|b| b.flipped())];
+        ChessBoard { pieces, ..Default::default() }
     }
 
     pub fn apply_move(&mut self, mov: &ChessMove, side_to_move: Color, en_passant_sq: Option<ChessSquare>) {
@@ -414,47 +421,30 @@ impl ChessBoard {
         }
     }
 
-    pub fn to_tensor<B: Backend>(
+    pub fn to_f32(
         &self,
-        device: &B::Device,
         en_passant_sq: Option<ChessSquare>,
-        from_sq: Option<ChessSquare>,
-        to_sq: Option<ChessSquare>,
-        promotion: Option<PieceType>,
-    ) -> Tensor<B, 2> {
-        let mut data = [[0f32; 64]; 14];
+    ) -> [f32; 64 * 14] {
+        let mut data = [0f32; 64 * 14];
 
-        let mut flat = [Bitboard::default(); 12];
+        self.pieces[0][0].write_to_slice(&mut data[0..64]);
+        self.pieces[0][1].write_to_slice(&mut data[64..128]);
+        self.pieces[0][2].write_to_slice(&mut data[128..192]);
+        self.pieces[0][3].write_to_slice(&mut data[192..256]);
+        self.pieces[0][4].write_to_slice(&mut data[256..320]);
+        self.pieces[0][5].write_to_slice(&mut data[320..384]);
 
-        flat[..6].copy_from_slice(&self.pieces[0]);
-        flat[6..].copy_from_slice(&self.pieces[1]);
-
-        for i in 0..12 {
-            data[i] = flat[i].to_f32();
-        }
+        self.pieces[1][0].write_to_slice(&mut data[384..448]);
+        self.pieces[1][1].write_to_slice(&mut data[448..512]);
+        self.pieces[1][2].write_to_slice(&mut data[512..576]);
+        self.pieces[1][3].write_to_slice(&mut data[576..640]);
+        self.pieces[1][4].write_to_slice(&mut data[640..704]);
+        self.pieces[1][5].write_to_slice(&mut data[704..768]);
 
         if let Some(square) = en_passant_sq {
-            data[12][square.0 as usize] = 1.0;
+            data[768 + square.0 as usize] = 1.0;
         }
-
-        if let Some(sq) = from_sq {
-            data[13][sq.0 as usize] = 1.0;
-        }
-        if let Some(sq) = to_sq {
-            data[13][sq.0 as usize] = 1.0;
-            if let Some(piece) = promotion {
-                let rank = match piece {
-                    PieceType::Knight => 4,
-                    PieceType::Bishop => 5,
-                    PieceType::Rook => 6,
-                    PieceType::Queen => 7,
-                    _ => 0,
-                };
-                data[13][sq.file() as usize + rank * 8] = 1.0;
-            }
-        }
-
-        Tensor::from_data(data, device)
+        data
     }
 
     pub fn get_piece_at(&self, square: ChessSquare) -> Option<ChessPiece> {
