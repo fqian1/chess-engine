@@ -23,7 +23,6 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
     ```bash
     cargo run
     ```
-    You can then enter moves in UCI format (e.g., `e2e4`).
 
 ### Train neural network
 
@@ -35,29 +34,29 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
 #### Training
 - [ ] Set up a training pipeline using `burn`.
 - [ ] Implement a training loop to feed game data to the model.
-- [ ] Choose and implement a loss function (e.g., cross-entropy for move prediction, mean squared error for evaluation).
-- [ ] Select and configure an optimizer (e.g., Adam).
 
 ```
-
+ug fyp: compare mask vs unmasked training in factored action space chess transformer
 # model architecture
 inputs:
  - 64x14 tensor: 8x8 grid, 12 1 hot planes for pieces, 1 hot plane for en passant, 1/multi-hot plane for move (0 hot when picking from_sq, 1 hot when picking to_sq, 2 hot when picking promotion piece, just populate the squares)
  - 1x5 tensor: 4x1 hot castling rights, 1 scalar for 50 move rule. no 3 fold repetition (handle with contempt + search tree)
-encoder:
- - project into embedding dimension. add 2d positional encoding
+engine:
+ - project into embedding dimension. add 2d positional encoding. cat with meta (castling, 50 mov clock). put into encoder -> [65, 14]. policy: linear [64, 14] -> [64, f32], value: linear [1, 14] -> [3, f32].
 outputs:
- - policy: 8x8 grid, used for from_sq, to_sq and promotion_piece (promotion file look down rank for piece). bce loss, softmax activation (legal: add mask)
- - value: scalar. tanh activation, mse loss.
+ - policy: [64, f32]. select a square for from, to, promotion. (prom file, look down ranks for piece). softmax activation, cross-entropy loss.
+ - value: [3, f32]. w/d/l buckets. softmax activation, cross-entropy loss.
 
-hyper parameter tuning:
-legal punishment ratio:
-geometrically impossible move : pseudolegal move : losses
-pseudo legal:
-geometrically impossible : loss
-depth vs size
-
-play pseudo legal, legal with masking, no masking compare 4 permutations whats difference
+bitboards -> [f32; 64 * 14] -> Tensor<B, 3> with shape [batch_size, 64, 14].
+meta -> [f32; 5] -> Tensor<B, 2> with shape [batch_size, 5].
+transformer outputs {
+        masked + legal:         softmax over legal squares
+        masked + pseudolegal:   softmax over pseudolegal squares
+        unmasked + legal:       softmax over all squares
+        unmasked + pseudolegal: softmax over all squares
+}
+target policy same for all: mcts sq visit ratios for legal moves. difference is if theres mask to stop punishment propogating through network.
+this lets full games play out to create full training data.
 
 rayon this shit
 
@@ -68,7 +67,11 @@ batch.iter_mut().for_each(|game| {
 })
 
 loop {
-        batch.iter_mut().map(|game| game.result = game.check_outcome);
+        batch.iter_mut().for_each(|game| {
+                game.result = game.check_outcome
+                game.gameStateEntry.value = game.result to f32 or something
+                // this is the entry for the last position get the value after the move is made
+        });
         let remaining_batch = batch.iter().filter(|game| game.result.is_none);
         let tensors = remaining_batch.iter_mut().for_each(|game| {
                 let board, meta = if game.side_to_move == black {
@@ -84,7 +87,6 @@ loop {
         if not masking, just skip that
         let outputs = transformer.forward(board_tensor, meta_tensor) // replace with search tree - take value from depth, but obviously next policy/moves_left
         // unbatch and turn into Vec<(policy: [f32;64], value: f32); batch_size>
-
 
         let policy_sq = match rule_set {
                 legal => {
