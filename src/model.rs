@@ -5,7 +5,11 @@ use burn::{
         transformer::{TransformerEncoder, TransformerEncoderConfig, TransformerEncoderInput},
     },
     prelude::*,
+    tensor::{activation::log_softmax, backend::AutodiffBackend},
+    train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
+
+use crate::data::ChessBatch;
 
 // 2 pass encoder: select from sq, populate plane 14, select to square
 #[derive(Module, Debug)]
@@ -40,22 +44,41 @@ impl ChessTransformerConfig {
                 .with_dropout(0.0)
                 .init(device),
             policy: LinearConfig::new(self.d_model, 1).init(device),
-            value: LinearConfig::new(self.d_model, 1).init(device),
+            value: LinearConfig::new(self.d_model, 3).init(device),
             d_model: self.d_model,
             masked,
         }
     }
 }
 
+impl<B: AutodiffBackend> TrainStep for ChessTransformer<B> {
+    type Input = ChessBatch<B>;
+    type Output = ClassificationOutput<B>;
+    fn step(&self, batch: ChessBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
+        let item = self.forward_classification(batch);
+        TrainOutput::new(self, item.loss.backward(), item)
+    }
+}
+
+impl<B: Backend> InferenceStep for ChessTransformer<B> {
+    type Input = ChessBatch<B>;
+    type Output = ClassificationOutput<B>;
+    fn step(&self, batch: ChessBatch<B>) -> ClassificationOutput<B> {
+        self.forward_classification(batch)
+    }
+}
+
 impl<B: Backend> ChessTransformer<B> {
+    // this is just give u straight logits
     pub fn forward(&self, board: Tensor<B, 3>, meta: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let [batch_size, _seq_len, _] = board.dims();
+        let device = board.device();
 
         // batchsize x 64 x d_model
         let mut x = self.piece_encoder.forward(board);
 
         // positional encodings
-        let coords = Tensor::arange(0..8, &x.device()).unsqueeze_dim(0);
+        let coords = Tensor::arange(0..8, &device).unsqueeze_dim(0);
         let x_emb: Tensor<B, 4> = self.pos_embedding_x.forward(coords.clone()).unsqueeze_dim(1);
         let y_emb: Tensor<B, 4> = self.pos_embedding_y.forward(coords).unsqueeze_dim(2);
         let t1 = x_emb.expand([1, 8, 8, self.d_model]);
@@ -70,30 +93,46 @@ impl<B: Backend> ChessTransformer<B> {
 
         let x = self.transformer.forward(TransformerEncoderInput::new(x));
 
-        // batchsize x f32
+        // batchsize x 1 x d_model -> batch_size x 3
         let value_latent = x.clone().slice([0..batch_size, 64..65]).squeeze_dim(1);
-        let value = self.value.forward(value_latent).tanh();
+        let value = self.value.forward(value_latent);
 
-        // batch_size x 64 x d_model -> bach_size x 64 x f32
+        // batch_size x 64 x d_model -> bach_size x 64
         let board_latent = x.slice([0..batch_size, 0..64]);
         let policy = self.policy.forward(board_latent).squeeze_dim(2);
 
         (policy, value)
     }
 
-    fn compute_loss(
-        &self,
-        policy_logit: Tensor<B, 2>,
-        value_pred: Tensor<B, 1>,
-        target_policy: Tensor<B, 2>,
-        target_value: Tensor<B, 1>,
-        mask: Option<Tensor<B, 2, Bool>>,
-    ) {
-        let loss_policy =
-            CrossEntropyLossConfig::new().init(&policy_logit.device()).
-        let loss = loss_policy.fo
+    pub fn forward_classification(&self, batch: ChessBatch<B>) -> ClassificationOutput<B> {
+        let [batch_size, _, _] = batch.boards.dims();
+        let (policy_pred, value_pred) = self.forward(batch.boards.clone(), batch.metas);
+        let (policy_loss, value_loss) = self.calculate_loss(
+            policy_pred.clone(),
+            value_pred.clone(),
+            batch.policy_targets.clone(),
+            batch.value_targets.clone(),
+        );
+        let target_indices = batch.policy_targets.argmax(1).reshape([batch_size]);
+        ClassificationOutput::new(policy_loss + value_loss, policy_pred + value_pred, target_indices)
+    }
 
-        let alpha = 1.0;
-        loss_policy.mul_scalar(alpha).add(loss_value)
+    // tunable hyperparameter: weight of policy loss vs value loss
+    fn calculate_loss(
+        &self,
+        policy_pred: Tensor<B, 2>,
+        value_pred: Tensor<B, 2>,
+        target_policy: Tensor<B, 2>,
+        target_value: Tensor<B, 1, Int>,
+    ) -> (Tensor<B, 1>, Tensor<B, 1>) {
+        let device = &policy_pred.device();
+        // Kl div. idk how it work
+        let policy_probs = log_softmax(policy_pred, 1);
+        let policy_loss = (target_policy * policy_probs).sum_dim(1).mean().neg();
+
+        let ce_loss = CrossEntropyLossConfig::new().with_smoothing(Some(0.05)).init(device);
+        // target value should be the index of the bucket!! 0, 1, 2!
+        let value_loss = ce_loss.forward(value_pred, target_value);
+        (policy_loss, value_loss)
     }
 }
