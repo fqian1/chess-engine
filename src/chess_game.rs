@@ -115,7 +115,7 @@ impl ChessGame {
             game_history: Vec::new(),
             zobrist_hash: 0,
             rule_set: RuleSet::Legal,
-            outcome: None,
+            outcome: Outcome::Unfinished,
             pseudolegal_moves: Vec::new(),
         }
     }
@@ -478,7 +478,6 @@ impl ChessGame {
     // }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
-        // I DONT CARE! its 120 bytes its FINE.
         let mut temp_board = self.chessboard.clone();
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
@@ -694,11 +693,11 @@ impl ChessGame {
     }
 
     pub fn get_possible_from_squares(&self) -> Vec<ChessSquare> {
-        self.pseudolegal_moves.clone().into_iter().map(|mov| mov.from).collect()
+        self.pseudolegal_moves.iter().map(|mov| mov.from).collect()
     }
 
     pub fn get_possible_to_squares(&self, from_square: &ChessSquare) -> Vec<ChessSquare> {
-        self.pseudolegal_moves.clone().into_iter().filter(|mov| mov.from == *from_square).map(|mov| mov.to).collect()
+        self.pseudolegal_moves.iter().filter(|mov| mov.from == *from_square).map(|mov| mov.to).collect()
     }
 
     // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible
