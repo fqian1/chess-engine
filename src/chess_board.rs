@@ -1,7 +1,3 @@
-use burn::{Tensor, prelude::Backend};
-
-use crate::CastlingRights;
-
 use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, Default)]
@@ -419,32 +415,6 @@ impl ChessBoard {
             let rook = ChessPiece::new(side_to_move, PieceType::Rook);
             self.move_piece(rook_from, rook_to, rook);
         }
-    }
-
-    pub fn to_f32(
-        &self,
-        en_passant_sq: Option<ChessSquare>,
-    ) -> [f32; 64 * 14] {
-        let mut data = [0f32; 64 * 14];
-
-        self.pieces[0][0].write_to_slice(&mut data[0..64]);
-        self.pieces[0][1].write_to_slice(&mut data[64..128]);
-        self.pieces[0][2].write_to_slice(&mut data[128..192]);
-        self.pieces[0][3].write_to_slice(&mut data[192..256]);
-        self.pieces[0][4].write_to_slice(&mut data[256..320]);
-        self.pieces[0][5].write_to_slice(&mut data[320..384]);
-
-        self.pieces[1][0].write_to_slice(&mut data[384..448]);
-        self.pieces[1][1].write_to_slice(&mut data[448..512]);
-        self.pieces[1][2].write_to_slice(&mut data[512..576]);
-        self.pieces[1][3].write_to_slice(&mut data[576..640]);
-        self.pieces[1][4].write_to_slice(&mut data[640..704]);
-        self.pieces[1][5].write_to_slice(&mut data[704..768]);
-
-        if let Some(square) = en_passant_sq {
-            data[768 + square.0 as usize] = 1.0;
-        }
-        data
     }
 
     pub fn get_piece_at(&self, square: ChessSquare) -> Option<ChessPiece> {
