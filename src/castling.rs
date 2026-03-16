@@ -1,5 +1,3 @@
-use burn::{Tensor, prelude::Backend};
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct CastlingRights(pub u8);
 
