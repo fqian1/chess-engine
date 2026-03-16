@@ -1,7 +1,6 @@
 use burn::{
     nn::{
         Embedding, EmbeddingConfig, Linear, LinearConfig,
-        loss::CrossEntropyLossConfig,
         transformer::{TransformerEncoder, TransformerEncoderConfig, TransformerEncoderInput},
     },
     prelude::*,
@@ -22,7 +21,6 @@ pub struct ChessTransformer<B: Backend> {
     policy: Linear<B>, // Just pick one square
     value: Linear<B>,
     d_model: usize,
-    masked: bool,
 }
 
 #[derive(Config, Debug)]
@@ -34,7 +32,7 @@ pub struct ChessTransformerConfig {
 }
 
 impl ChessTransformerConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device, masked: bool) -> ChessTransformer<B> {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> ChessTransformer<B> {
         ChessTransformer {
             piece_encoder: LinearConfig::new(14, self.d_model).init(device),
             meta_encoder: LinearConfig::new(5, self.d_model).init(device),
@@ -46,7 +44,6 @@ impl ChessTransformerConfig {
             policy: LinearConfig::new(self.d_model, 1).init(device),
             value: LinearConfig::new(self.d_model, 3).init(device),
             d_model: self.d_model,
-            masked,
         }
     }
 }
@@ -107,14 +104,15 @@ impl<B: Backend> ChessTransformer<B> {
     pub fn forward_classification(&self, batch: ChessBatch<B>) -> ClassificationOutput<B> {
         let [batch_size, _, _] = batch.boards.dims();
         let (policy_pred, value_pred) = self.forward(batch.boards.clone(), batch.metas);
-        let (policy_loss, value_loss) = self.calculate_loss(
+        let loss = self.calculate_loss(
             policy_pred.clone(),
             value_pred.clone(),
             batch.policy_targets.clone(),
             batch.value_targets.clone(),
+            0.5,
         );
         let target_indices = batch.policy_targets.argmax(1).reshape([batch_size]);
-        ClassificationOutput::new(policy_loss + value_loss, policy_pred + value_pred, target_indices)
+        ClassificationOutput::new(loss, policy_pred, target_indices)
     }
 
     // tunable hyperparameter: weight of policy loss vs value loss
@@ -123,16 +121,19 @@ impl<B: Backend> ChessTransformer<B> {
         policy_pred: Tensor<B, 2>,
         value_pred: Tensor<B, 2>,
         target_policy: Tensor<B, 2>,
-        target_value: Tensor<B, 1, Int>,
-    ) -> (Tensor<B, 1>, Tensor<B, 1>) {
-        let device = &policy_pred.device();
+        target_value: Tensor<B, 2>,
+        ratio: f32,
+    ) -> Tensor<B, 1> {
         // Kl div. idk how it work
         let policy_probs = log_softmax(policy_pred, 1);
         let policy_loss = (target_policy * policy_probs).sum_dim(1).mean().neg();
 
-        let ce_loss = CrossEntropyLossConfig::new().with_smoothing(Some(0.05)).init(device);
-        // target value should be the index of the bucket!! 0, 1, 2!
-        let value_loss = ce_loss.forward(value_pred, target_value);
-        (policy_loss, value_loss)
+        let value_probs = log_softmax(value_pred, 1);
+        let value_loss = (target_value * value_probs).sum_dim(1).mean().neg();
+
+        if ratio >= 1.0 || ratio <= 0.0 {
+            return policy_loss + value_loss;
+        }
+        (policy_loss * ratio) + (value_loss * (1.0 - ratio))
     }
 }
