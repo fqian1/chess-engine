@@ -8,6 +8,7 @@ in
   pkgs.mkShell {
     buildInputs = [
       rustNightly
+      pkgs.cargo-public-api
     ];
     # Weird thing to expose vulkan backend
     shellHook = ''
