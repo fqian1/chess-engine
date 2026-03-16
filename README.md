@@ -5,7 +5,7 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
 ## Features
 
 *   **FEN String Parsing**: Boards can be loaded from Forsyth-Edwards Notation (FEN) strings.
-*   **Move Validation**: All standard chess moves are validated, including special moves.
+*   **Move Generation**: All standard chess moves can be generated for a given position and rule set.
 *   **Special Moves**: Handles castling, en-passant, and pawn promotion.
 *   **Command-Line Interface**: A simple CLI to play a game of chess.
 
@@ -26,115 +26,55 @@ A chess client and engine built in rust. Client supports legal and pseudo-legal 
 
 ### Train neural network
 
-#### Data Collection & Preparation
-- [ ] Create a data structure to represent game states (board state, played move, evaluation) for training.
-- [ ] Implement a system to serialize and save game data.
-- [ ] Generate a dataset by running self-play games (reinforcement learning).
+PROJECT: UNDERGRADUATE CS FYP - CUSTOM CHESS CLIENT & NEURAL ENGINE
 
-#### Training
-- [ ] Set up a training pipeline using `burn`.
-- [ ] Implement a training loop to feed game data to the model.
+1. CORE HYPOTHESES & EXPERIMENTS
+-------------------------------------------------------------------------------
+A. Ruleset Convergence (Pseudo-Legal vs. Legal)
+   - Control: Train on strict legal ruleset.
+   - Test: Train on pseudo-legal ruleset (explicit king capture = win).
+   - Hypothesis: Pseudo-legal training naturally converges to legal play (checkmate/pins emerge as emergent behaviors to secure/prevent king capture).
 
-```
-ug fyp: compare mask vs unmasked training in factored action space chess transformer
-# model architecture
-inputs:
- - 64x14 tensor: 8x8 grid, 12 1 hot planes for pieces, 1 hot plane for en passant, 1/multi-hot plane for move (0 hot when picking from_sq, 1 hot when picking to_sq, 2 hot when picking promotion piece, just populate the squares)
- - 1x5 tensor: 4x1 hot castling rights, 1 scalar for 50 move rule. no 3 fold repetition (handle with contempt + search tree)
-engine:
- - project into embedding dimension. add 2d positional encoding. cat with meta (castling, 50 mov clock). put into encoder -> [65, 14]. policy: linear [64, 14] -> [64, f32], value: linear [1, 14] -> [3, f32].
-outputs:
- - policy: [64, f32]. select a square for from, to, promotion. (prom file, look down ranks for piece). softmax activation, cross-entropy loss.
- - value: [3, f32]. w/d/l buckets. softmax activation, cross-entropy loss.
+B. Logit Masking vs. Punishment (Mechanics "Grokking")
+   - Control: Mask illegal moves before softmax (standard practice; network is blind to rules).
+   - Test: No masking before softmax. Punish illegal/impossible moves via loss function.
+   - Hypothesis: Unmasked training learns slower and plays tentatively, but forces the network to internally map ("grok") the physical mechanics of the board.
 
-bitboards -> [f32; 64 * 14] -> Tensor<B, 3> with shape [batch_size, 64, 14].
-meta -> [f32; 5] -> Tensor<B, 2> with shape [batch_size, 5].
-transformer outputs {
-        masked + legal:         softmax over legal squares
-        masked + pseudolegal:   softmax over pseudolegal squares
-        unmasked + legal:       softmax over all squares
-        unmasked + pseudolegal: softmax over all squares
-}
-target policy same for all: mcts sq visit ratios for legal moves. difference is if theres mask to stop punishment propogating through network.
-this lets full games play out to create full training data.
+2. NOVEL ARCHITECTURE: MULTI-PASS ENCODER
+-------------------------------------------------------------------------------
+- Inputs: Board state (12 bitboards) + En Passant square (1 bitboard) + Selected square(s) (1 bitboard) + Castling rights (4x1 hot) + 50-move rule scalar (1 f32).
+- Outputs: Policy head (64-square distribution) + Value head (W/D/L buckets).
+- Execution Flow:
+   - Pass 1: Select origin square (piece to move).
+   - Pass 2: Select destination square (feed Pass 1 output back into input).
+   - Pass 3 (Conditional): Select promotion piece (scan down promotion file). Maybe 2 pass, expect 2 hot policy in second pass when need promotion? seeing as pawns cant move backwards, scanning down ranks wont conflict with any other move, however might be confusing to learn.
+- MCTS Implications: Doubles tree depth, but drastically reduces branching factor per node (fewer candidate pieces, fewer candidate destinations).
+- Both heads use softmax activation, kl divergence loss.
 
-rayon this shit
+3. ENDGAME TABLEBASE (EGTB) INJECTION SCHEDULES
+-------------------------------------------------------------------------------
+Test three distinct EGTB data integration strategies to measure retention/forgetting:
+   - Schedule 1 (Bootstrap): Inject at the beginning to bootstrap the value head. (Risk: Catastrophic forgetting).
+   - Schedule 2 (Balanced): Inject evenly throughout the entire training pipeline.
+   - Schedule 3 (Late-Stage): Inject near the end of training. (Aligns with chronological endgame learning, but risks poor integration with early-game weights).
 
-# pseudo code?
-batch = [ChessGame; batch_size]
-batch.iter_mut().for_each(|game| {
-        game.zobrist_hash = game.calculate_hash()
-})
+4. ENGINE & CLIENT IMPLEMENTATION (FROM SCRATCH)
+-------------------------------------------------------------------------------
+- Board Representation: Bitboards.
+- Move Generation: Pseudo-legal and legal generators.
+- Optimizations: Bitwise intrinsics, efficient memory referencing, slice systems.
+- Language/Stack: rust, burn, rand, rayon.
 
-loop {
-        batch.iter_mut().for_each(|game| {
-                game.result = game.check_outcome
-                game.gameStateEntry.value = game.result to f32 or something
-                // this is the entry for the last position get the value after the move is made
-        });
-        let remaining_batch = batch.iter().filter(|game| game.result.is_none);
-        let tensors = remaining_batch.iter_mut().for_each(|game| {
-                let board, meta = if game.side_to_move == black {
-                        game.board.flip, game.meta.to_tensor
-                } else { game.board, game.meta}
+5. REQUIRED DELIVERABLES & METRICS
+-------------------------------------------------------------------------------
+- Custom chess client and engine source code.
+- Training statistics (Loss curves, ELO progression, illegal move frequency).
+- Model snapshots at defined epochs for all experimental branches.
+- Comparative analysis: Masked vs. Unmasked, Legal vs. Pseudo-Legal, EGTB schedules.
 
-                let board_tensor = board.to_tensor
-                let meta_tensor = meta.to_tensor + Tensor::from(half_move_clock/50)
+6. AREAS OF IMPROVEMENT
+-------------------------------------------------------------------------------
+- Custom chess client and engine source code.
+- Get board masks directly from move generator
+- Implement magic bitboards
 
-                (board_tensor, meta_tensor)
-        })
-        if masking, get legal from squares mask output. gen legal from sqs, -> tensor where 0 -> f32::MIN, apply onto policy head, then softmax.
-        if not masking, just skip that
-        let outputs = transformer.forward(board_tensor, meta_tensor) // replace with search tree - take value from depth, but obviously next policy/moves_left
-        // unbatch and turn into Vec<(policy: [f32;64], value: f32); batch_size>
-
-        let policy_sq = match rule_set {
-                legal => {
-                        let mut indices: [usize; 64] = [0; 64];
-                        for i in 0..64 {
-                                squares[i] = i
-                        }
-
-                        indices.sort_unstable_by(|&a, &b| {value[b].total_cmp(&value[a])})
-
-                        squares: Vec<ChessSquare> = indices.iter().map(|x| ChessSquare::from(x).unwrap())
-                        squares.filter(self.legal_from_sq)
-                        top_sq
-                }
-                pseudo-legal => {
-                        let max_idx = values.iter().enumerate().fold(0, |acc, (i, x)| {
-                                if x > &values[acc] { i } else { acc }
-                        });
-                        ChessSquare::from(max_idx)
-                }
-        }
-
-        batch.iter_mut().for_each(|game| {
-                if let Some(entry) = game.GameStateEntry.last_mut() {
-                        entry.value = value
-                }
-                game.GameStateEntry.push(GameStateEntry::new(..policy_sq))
-        })
-
-        make tensors again, but include from_sq from last policy
-
-        do forward pass again
-        populate entries
-
-        if needs promotion square, make tensors again {
-                forward pass again
-                extract piece:
-                map policy_sq {
-                        to_sq = q
-                        to_sq - 8 = r // square below promotion sq
-                        to_sq - 16 = b // 2 squares below
-                        to_sq - 24 = n // 3 below
-                        _ => lose if pseudo legal or softmax it out
-                }
-                // promotion happen on same file so do like this
-                populate entries
-        }
-
-        remaining_batch.map(|game| game.make_move) // this should fill in rest of game.GameStateEntry
-}
-regret...
