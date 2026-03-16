@@ -139,6 +139,14 @@ impl Bitboard {
         *self = self.flipped();
     }
 
+    pub fn to_bool(&self) -> [bool;64] {
+        let mut bools = [false; 64];
+        for i in 0..64 {
+            bools[i] = (self.0 >> i) & 1 != 0;
+        }
+        bools
+    }
+
     pub fn write_to_slice(&self, slice: &mut [f32]) {
         let mut bb = self.0;
         while bb != 0 {
