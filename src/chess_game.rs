@@ -1,5 +1,3 @@
-use burn::{Tensor, prelude::Backend};
-
 use super::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +35,6 @@ pub struct ChessGame {
     pub zobrist_hash: u64,
     pub rule_set: RuleSet,
     pub outcome: Outcome,
-    pub pseudolegal_moves: Vec<ChessMove>,
 }
 
 impl Default for ChessGame {
@@ -116,7 +113,6 @@ impl ChessGame {
             zobrist_hash: 0,
             rule_set: RuleSet::Legal,
             outcome: Outcome::Unfinished,
-            pseudolegal_moves: Vec::new(),
         }
     }
 
@@ -491,7 +487,7 @@ impl ChessGame {
         }
     }
 
-    pub fn generate_pseudolegal(&mut self) {
+    pub fn generate_pseudolegal(&self) -> Vec<ChessMove> {
         let mut moves: Vec<ChessMove> = Vec::new();
 
         let (allies, opps) = match self.side_to_move {
@@ -678,26 +674,7 @@ impl ChessGame {
                 }
             }
         }
-        self.pseudolegal_moves = moves
-    }
-
-    pub fn is_valid(&self, mov: &ChessMove) -> bool {
-        if self.pseudolegal_moves.contains(mov) {
-            if self.rule_set == RuleSet::PseudoLegal {
-                return true;
-            } else if self.is_legal(mov) {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn get_possible_from_squares(&self) -> Vec<ChessSquare> {
-        self.pseudolegal_moves.iter().map(|mov| mov.from).collect()
-    }
-
-    pub fn get_possible_to_squares(&self, from_square: &ChessSquare) -> Vec<ChessSquare> {
-        self.pseudolegal_moves.iter().filter(|mov| mov.from == *from_square).map(|mov| mov.to).collect()
+        moves
     }
 
     // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible
@@ -897,7 +874,7 @@ impl ChessGame {
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
         // Safe, king must exist otherwise wouldve returned earlier
         let king_sq = king_bb.pop_lsb().unwrap();
-        let mut legal_moves = self.pseudolegal_moves.clone();
+        let mut legal_moves = self.generate_pseudolegal();
         legal_moves.retain(|x| self.is_legal(x));
 
         if legal_moves.is_empty() {
@@ -951,31 +928,5 @@ impl ChessGame {
         }
 
         Outcome::Unfinished
-    }
-
-    pub fn to_f32(&self) -> ([f32; 64 * 14], [f32; 5]) {
-        let (chess_board, castling_rights, ep_sq) = if self.side_to_move == Color::White {
-            (self.chessboard.clone(), self.castling_rights, self.en_passant)
-        } else {
-            (
-                self.chessboard.flip_board(),
-                self.castling_rights.flip_perspective(),
-                self.en_passant.map(|x| x.square_opposite()),
-            )
-        };
-        let board = chess_board.to_f32(ep_sq);
-
-        let mut meta = [0f32; 5];
-        for i in 0..4 {
-            meta[i] = (castling_rights.0 >> i & 1).into();
-        }
-        meta[4] = self.halfmove_clock as f32 / 50.0;
-
-        (board, meta)
-    }
-
-    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> (Tensor<B, 2>, Tensor<B, 1>) {
-        let (board, meta) = self.to_f32();
-        (Tensor::<B, 2>::from_data(board, device).reshape([64, 14]), Tensor::from_data(meta, device))
     }
 }
