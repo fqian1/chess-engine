@@ -66,7 +66,7 @@ impl<B: Backend> InferenceStep for ChessTransformer<B> {
 }
 
 impl<B: Backend> ChessTransformer<B> {
-    // this is just give u straight logits
+    // this is just straight logits no softmax yet
     pub fn forward(&self, board: Tensor<B, 3>, meta: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let [batch_size, _seq_len, _] = board.dims();
         let device = board.device();
@@ -94,7 +94,7 @@ impl<B: Backend> ChessTransformer<B> {
         let value_latent = x.clone().slice([0..batch_size, 64..65]).squeeze_dim(1);
         let value = self.value.forward(value_latent);
 
-        // batch_size x 64 x d_model -> bach_size x 64
+        // batch_size x 64 x d_model -> batch_size x 64
         let board_latent = x.slice([0..batch_size, 0..64]);
         let policy = self.policy.forward(board_latent).squeeze_dim(2);
 
@@ -124,7 +124,7 @@ impl<B: Backend> ChessTransformer<B> {
         target_value: Tensor<B, 2>,
         ratio: f32,
     ) -> Tensor<B, 1> {
-        // Kl div. idk how it work
+        // Kl divergence
         let policy_probs = log_softmax(policy_pred, 1);
         let policy_loss = (target_policy * policy_probs).sum_dim(1).mean().neg();
 

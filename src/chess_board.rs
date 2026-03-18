@@ -1,6 +1,6 @@
 use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ChessBoard {
     pub pieces: [[Bitboard; 6]; 2],
     pub white_occupancy: Bitboard,

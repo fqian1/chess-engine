@@ -1,6 +1,6 @@
 # Chess Engine
 
-A chess client and engine built in rust. Client supports legal and pseudo-legal rule sets.
+A chess client and engine in under ~2000 lines. Client supports legal and pseudo-legal rule sets.
 
 ## Features
 
@@ -42,12 +42,12 @@ B. Logit Masking vs. Punishment (Mechanics "Grokking")
 
 2. NOVEL ARCHITECTURE: MULTI-PASS ENCODER
 -------------------------------------------------------------------------------
-- Inputs: Board state (12 bitboards) + En Passant square (1 bitboard) + Selected square(s) (1 bitboard) + Castling rights (4x1 hot) + 50-move rule scalar (1 f32).
-- Outputs: Policy head (64-square distribution) + Value head (W/D/L buckets).
+- Inputs: Board state (12 bitboards) + En Passant square (1 bitboard) + Selected square(s) (1 bitboard) & Castling rights (4x1 hot) + 50-move rule scalar (1 f32).
+- Outputs: Policy head (64-square distribution: [f32; 64]) + Value head (W/D/L buckets: [f32; 3]).
 - Execution Flow:
    - Pass 1: Select origin square (piece to move).
    - Pass 2: Select destination square (feed Pass 1 output back into input).
-   - Pass 3 (Conditional): Select promotion piece (scan down promotion file). Maybe 2 pass, expect 2 hot policy in second pass when need promotion? seeing as pawns cant move backwards, scanning down ranks wont conflict with any other move, however might be confusing to learn.
+   - Pass 3 (Conditional): Select promotion piece (scan down promotion file).
 - MCTS Implications: Doubles tree depth, but drastically reduces branching factor per node (fewer candidate pieces, fewer candidate destinations).
 - Both heads use softmax activation, kl divergence loss.
 

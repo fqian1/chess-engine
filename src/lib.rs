@@ -12,6 +12,7 @@ pub mod zobrist;
 pub mod model;
 pub mod data;
 pub mod engine;
+pub mod chess_position;
 
 pub use burn;
 pub use bitboard::Bitboard;
@@ -25,3 +26,4 @@ pub use chess_square::ChessSquare;
 pub use zobrist::ZobristKeys;
 pub use model::ChessTransformer;
 pub use data::ReplayBuffer;
+pub use chess_position::ChessPosition;

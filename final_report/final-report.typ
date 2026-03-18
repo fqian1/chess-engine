@@ -171,8 +171,8 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
   row-gutter: 1.5em,
   column-gutter: 1em,
 
-  [$A_f$], [The source message, being a sequence of $f$ source symbols $a_1 a_2 ... a_f$],
-  [$a_i$], [The $i^("th")$ symbol in the source message, where $a_i in S_m$],
+  [$M C T S$], [Monte Carlo Search Tree, a heuristic search algorithm],
+  [$P o l i c y$], [The $i^("th")$ symbol in the source message, where $a_i in S_m$],
   [$B_g$], [The decoded message, being a sequence of $g$ source symbols $b_1 b_2 ... b_g$],
   [$b_i$], [The $i^("th")$ symbol in the decoded message, where $b_i in S_m$],
   [$C_h$], [The transmitted (compressed) message, being a sequence of $h$ Tunstall codewords $c_1 c_2 ... c_h$],
@@ -190,7 +190,7 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
   columns: (2cm, 1fr),
   row-gutter: 1.5em,
 
-  [BER], [Bit Error Rate],
+  [MCTS], [Monte Carlo Tree Search],
   [BPSK], [Binary Phase Shift Keying],
   [BSC], [Binary Symmetric Channel],
   [DCT], [Discrete Cosine Transform],
@@ -212,11 +212,149 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
 // ==========================================
 = Introduction
 
-== Dissertation Format
+== Opening Statement
 
-This template is provided to facilitate the process of writing up your dissertation while ensuring its format is consistent with requirements. In using this template, do not, under any circumstances, make any changes to the class file provided. In particular, do not attempt to make any changes to the title page, the statement of originality, or the copyright page.
+Machine learning is plagued with an acceptance of the ann as a black box. In my project, I attempt
+to deconstruct the learning process of transformer through a novel architecture, and by trying to
+develop emergent behaviour through wider and unrestricted action spaces in more humanistic action representations.
+the problem to be solved by the network will be chess, where there are highly ambiguous states with targets ranging from similarly ambiguous to
+objective ground truths. a problem that technically has a perfect solution, but impossible to find, seems most fitting for this investigation.
 
-Use of this template is not mandatory; if you choose not to use it, then you must make your final layout resemble this output as closely as possible. In particular, the textual content and layout of the title page, statement of originality, and copyright page must not be changed.
+This project's focus is distributed over 4 hypothesis:
+ - whether self play in a pseudo legal chess environment converges to legal play.
+ - how masking logits affect learning dynamics, investigation into "grokking" mechanics
+ - the effectiveness of a 2 pass autoregressive encoder over a smaller action space in chess
+ - how the injection of perfect data at different stages of the training process influences agent strength
+
+== Aims of the Project
+The aim of this project is to train multiple transformers on chess via self play reinforcement learning on legal and pseudo legal rule sets
+and investigate how the different action spaces influence agent performance over time to speculate on the impact in ideal conditions (e.g.
+with a lot more compute and time)
+
+== Objectives
+ - Build a bespoke chess client from scratch to handle both pseduo legal and legal game play, with:
+  - a fucking move generator
+  - zobrist hashing
+  - state conversions to and from fen strings
+  - bitboards and bitewise intrinsics
+ - Architect a 2 pass autoregressive encoder and integrate it with the chess engine
+ - construct a bipartite MCTS to self play on
+ - train on generated self play data
+ - collect statistics throughout training epochs, measuring leading statistics such as entropy, illegal move probability, elo
+ - from snapshots of model weights, estimate elo of engines
+ - evaluate impact of action space on agent
+ - analyse model weights to search for implicit masking
+ - suggest areas for improvement
+
+== Project Motivations
+i like chess and ml and systems programming
+
+== Risks
+there are a few risks with this project. one prominent risk is scope creep, especially with the bespoke construction of the chess client. in rust.
+that was just a terrible mistake, however i am just built different
+
+= Literature Review
+== Chess fundamentals
+=== Game rules
+=== Board representation
+=== Move generation
+== Machine learning in chess
+=== Policy
+=== Value
+=== MCTS
+== History
+=== Alpha beta pruning
+=== NNUE
+=== Transformers (attention is all you need)
+== Now
+=== Grokking (a classic)
+@power2022grokking
+=== AlphaZero (Masking)
+@silver2017masteringchessshogiselfplay
+=== MuZero (Latent space)
+@Schrittwieser_2020
+this destroys my disso, but i found out too late. maybe ill leave it out.
+=== leela chess zero
+@jenner2024evidencelearnedlookaheadchessplaying
+=== Chess transformer
+@monroe2024masteringchesstransformermodel
+not read, please be different to mine
+=== Chessformer
+@monroe2026chessformer
+i also didnt know about this. neither have i read it, god i hope its no good.
+
+= Research Hypotheses
+== Pseudo legal training
+an agent learned to play pseudo legal chess should learn to play legal chess because king capture involves mating patterns and king safety involves pins
+== Punishment propogation
+allowing illegal/geometrically impossible moves during self play and allowing the propogating the punishment back should teach the model just as well if not better in the long run
+== autoregressive move generator
+more human like decision making approach in the action space is easier to train. trade off mcts depth vs width.
+== Perfect data injection
+how does injection of perfect data throughout training influence agent?
+beginning: bootstrap value, forgetting.
+throughout: probably best
+at end: sharpens endgame, forgetting.
+
+= Implementation details
+the project is available on github.
+
+== System architecture overview
+== Client Architecture
+=== Bitboard
+=== Chessboard
+=== ChessSquare
+=== CastlingRights
+=== ChessMove
+=== ChessSquare
+=== ChessGame
+== Model Architecture
+=== Encoder
+=== Positional Embeddings
+=== Policy
+=== Value
+== MCTS Architecture
+=== Data
+=== PUCT algorithm
+=== Node
+=== Edge
+
+= Training & Self Play
+== Self play
+== MCTS
+== Training (backprop via autograd)
+
+= Results
+== Hypotheses 1: pseudo legal
+== Hypotheses 2: masking
+== Hypotheses 2: EGTB injection
+== Hypotheses 4: 2 pass model architecture.
+=== not bothered to construct single pass architecture, requires building new mcts, fuck that
+
+= evaluation
+== fairness: same starting seed, epochs, search depth
+== elo, benchmark a lot for good result
+== illegal move probability
+== policy entropy
+== MCTS perft
+== w/l to draw ratio
+== graphs
+
+= Conclusion
+== what did i even do? i just fafo'd.
+
+= challenges and areas of improvement
+== building the chess client was challenging
+== i shouldve used magic bitboards
+== i shouldve adapted an existing chess engine
+== i couldve trained and compared single vs dual pass transformer
+== trained for longer, whole point was long term but my hardware is bad
+
+
+
+
+
+
 
 == Using Typst
 
@@ -292,61 +430,35 @@ $ op("Pr") { bold(r)_(0, n iota + x_2), sigma_(n iota) = x_2 } = sum_(x_1, d_(io
   times op("Pr") { bold(r)_(n(iota-1)+x_1, n iota + x_2), bold(t)_(iota-1) }
 ], size: #200%) $
 
-=== Adding code fragments
+=== code blocks
 
-Source code can be included using "raw" blocks (triple backticks). Typst provides built-in syntax highlighting for various programming languages.
+```rust
+API:
+pub struct ChessGame
+pub ChessGame::castling_rights: CastlingRights
+pub ChessGame::chessboard: ChessBoard
+pub ChessGame::en_passant: Option<ChessSquare>
+pub ChessGame::fullmove_counter: u32
+pub ChessGame::game_history: alloc::vec::Vec<GameStateEntry>
+pub ChessGame::halfmove_clock: u32
+pub ChessGame::outcome: Outcome
+pub ChessGame::rule_set: RuleSet
+pub ChessGame::side_to_move: chess_piece::Color
+pub ChessGame::zobrist_hash: u64
+impl ChessGame
+pub fn ChessGame::calculate_hash(&mut self) -> u64
+pub fn ChessGame::check_game_state(&self) -> Outcome
+pub fn ChessGame::fen_to_ascii(fen: &str)
+pub fn ChessGame::from_fen(fen: &str) -> Self
+pub fn ChessGame::generate_pseudolegal(&self) -> alloc::vec::Vec<chess_move::ChessMove>
+pub fn ChessGame::is_legal(&self, mov: &chess_move::ChessMove) -> bool
+pub fn ChessGame::make_move(&mut self, mov: &chess_move::ChessMove)
+pub fn ChessGame::to_fen(&self) -> alloc::string::String
+pub fn ChessGame::uci_to_move(&self, input: &str) -> result::Result<chess_move::ChessMove, &str>
 
-```c
-typedef int v4si __attribute__ ((vector_size (16)));
-
-void ArrayAdd(int *c, const int *a, const int *b, int n)
-{
-  const v4si *va = (const v4si *)a;
-  const v4si *vb = (const v4si *)b;
-  v4si *vc = (v4si *)c;
-  int i = 0;
-  if(n > 4)
-    for(; i < n / 4; i++)
-      vc[i] = va[i] + vb[i];
-  for(i *= 4; i < n; i++)
-    c[i] = a[i] + b[i];
-}
 ```
-
-=== Adding references
-
-Typst handles bibliographies through the #bibliography function, supporting both .bib and .yml formats. This separates your source data from the citation style, which is managed automatically by the template. Examples of various reference types included in the project are:
-
-#list(
-  [Conference papers (Briffa, Schaathun & Wesemeyer 2010)],
-  [Journal articles (el Gamal, Hemachandra, Shperling & Wei 1987)],
-  [Dissertations (Tunstall 1968)],
-  [Books (Press, Teukolsky, Vetterling & Flannery 1992)],
-  [User or technical manuals (NVI 2009, Henderson 2009)],
-  [Technical Reports (Burrows & Wheeler 1994)],
-  [Other material that cannot be easily classified (Farrell 1992)]
-)
 
 // ==========================================
 // BIBLIOGRAPHY
 // ==========================================
-#front-heading("Bibliography")
-
-#set par(hanging-indent: 1cm)
-
-Briffa, J. A., Schaathun, H. G. & Wesemeyer, S. (2010), An improved decoding algorithm for the Davey-MacKay construction, in ‘Proc. IEEE Intern. Conf. on Commun.’, Cape Town, South Africa.
-
-Burrows, M. & Wheeler, D. J. (1994), A block-sorting lossless data compression algorithm, Technical report, Digital SRC Research Report.
-
-el Gamal, A. A., Hemachandra, L. A., Shperling, I. & Wei, V. K. (1987), ‘Using simulated annealing to design good codes’, _IEEE Transactions on Information Theory_ *33*(1), 116–123.
-
-Farrell, P. G. (1992), ‘Notes on source coding’. University of Manchester.
-
-Henderson, B. (2009), _Netpbm_. \
-URL: #link("http://netpbm.sourceforge.net/doc/")[http://netpbm.sourceforge.net/doc/]
-
-NVI (2009), _NVIDIA CUDA Programming Guide_. Version 2.3.
-
-Press, W. H., Teukolsky, S. A., Vetterling, W. T. & Flannery, B. P. (1992), _Numerical Recipes in C: The Art of Scientific Computing_, second edn, Cambridge Universty Press.
-
-Tunstall, B. P. (1968), Synthesis of Noiseless Compression Codes, PhD thesis, Georgia Institute of Technology.
+#bibliography("refs.bib")
