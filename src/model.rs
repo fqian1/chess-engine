@@ -15,6 +15,7 @@ use crate::data::ChessBatch;
 pub struct ChessTransformer<B: Backend> {
     piece_encoder: Linear<B>, // 64 x 14 (12 piece plane + en pasant plane + selected sq plane)
     meta_encoder: Linear<B>,  // This is just castling rights and 50 move counter (4 1-hot + 1 scalar)
+    coordinates: Tensor<B, 2, Int>,
     pos_embedding_x: Embedding<B>,
     pos_embedding_y: Embedding<B>,
     transformer: TransformerEncoder<B>,
@@ -33,9 +34,11 @@ pub struct ChessTransformerConfig {
 
 impl ChessTransformerConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ChessTransformer<B> {
+        let coordinates = Tensor::arange(0..8, device).unsqueeze_dim(0);
         ChessTransformer {
             piece_encoder: LinearConfig::new(14, self.d_model).init(device),
             meta_encoder: LinearConfig::new(5, self.d_model).init(device),
+            coordinates,
             pos_embedding_x: EmbeddingConfig::new(8, self.d_model).init(device),
             pos_embedding_y: EmbeddingConfig::new(8, self.d_model).init(device),
             transformer: TransformerEncoderConfig::new(self.d_model, self.d_ff, self.n_heads, self.n_layers)
@@ -68,19 +71,15 @@ impl<B: Backend> InferenceStep for ChessTransformer<B> {
 impl<B: Backend> ChessTransformer<B> {
     // this is just straight logits no softmax yet
     pub fn forward(&self, board: Tensor<B, 3>, meta: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let [batch_size, _seq_len, _] = board.dims();
-        let device = board.device();
+        let [batch_size, seq_len, _] = board.dims();
 
         // batchsize x 64 x d_model
         let mut x = self.piece_encoder.forward(board);
 
         // positional encodings
-        let coords = Tensor::arange(0..8, &device).unsqueeze_dim(0);
-        let x_emb: Tensor<B, 4> = self.pos_embedding_x.forward(coords.clone()).unsqueeze_dim(1);
-        let y_emb: Tensor<B, 4> = self.pos_embedding_y.forward(coords).unsqueeze_dim(2);
-        let t1 = x_emb.expand([1, 8, 8, self.d_model]);
-        let t2 = y_emb.expand([1, 8, 8, self.d_model]);
-        let pos2d = t1 + t2;
+        let x_emb: Tensor<B, 4> = self.pos_embedding_x.forward(self.coordinates.clone()).unsqueeze_dim(1);
+        let y_emb: Tensor<B, 4> = self.pos_embedding_y.forward(self.coordinates.clone()).unsqueeze_dim(2);
+        let pos2d = x_emb + y_emb;
         let pos_flat = pos2d.reshape([1, 64, self.d_model]);
         x = x + pos_flat;
 
