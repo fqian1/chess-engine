@@ -1,4 +1,4 @@
-use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys};
+use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::{Outcome, RuleSet}};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessPosition {
@@ -201,6 +201,17 @@ impl ChessPosition {
         moves
     }
 
+    pub fn get_squares(&self) -> (Vec<ChessSquare>, Vec<ChessSquare>) {
+        let moves = self.generate_pseudolegal();
+        let mut from = Vec::with_capacity(moves.len());
+        let mut to = Vec::with_capacity(moves.len());
+        moves.into_iter().for_each(|mov| {
+            from.push(mov.from);
+            to.push(mov.to);
+        });
+        (from, to)
+    }
+
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
         let mut temp_board = self.chessboard.clone();
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
@@ -215,7 +226,7 @@ impl ChessPosition {
         }
     }
 
-    pub fn make_move(mut self, mov: &ChessMove) -> Self {
+    pub fn make_move(&mut self, mov: &ChessMove) {
         let keys = ZobristKeys::get();
         let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
         let captured_piece = self.chessboard.get_piece_at(mov.to);
@@ -316,8 +327,6 @@ impl ChessPosition {
         }
 
         debug_assert!(self.zobrist_hash == self.calculate_hash());
-
-        self
     }
 
     pub fn calculate_hash(&self) -> u64 {
@@ -358,6 +367,85 @@ impl ChessPosition {
         }
 
         hash
+    }
+
+    pub fn check_game_state(&self, rule_set: RuleSet) -> Outcome {
+        // PseudoLegal and Legal Checks
+        if self.halfmove_clock >= 100 {
+            return Outcome::Finished(None);
+        }
+
+        // King capture
+        if self.chessboard.get_piece_bitboard(Color::White, PieceType::King).is_empty() {
+            return Outcome::Finished(Some(Color::Black));
+        }
+        if self.chessboard.get_piece_bitboard(Color::Black, PieceType::King).is_empty() {
+            return Outcome::Finished(Some(Color::White));
+        }
+
+        if rule_set == RuleSet::PseudoLegal {
+            return Outcome::Unfinished;
+        }
+
+        // Legal Checks
+        // checkmate
+        let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
+        // Safe, king must exist otherwise wouldve returned earlier
+        let king_sq = king_bb.pop_lsb().unwrap();
+        let mut legal_moves = self.generate_pseudolegal();
+        legal_moves.retain(|x| self.is_legal(x));
+
+        if legal_moves.is_empty() {
+            if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
+                return Outcome::Finished(Some(self.side_to_move.opposite()));
+            } else {
+                return Outcome::Finished(None);
+            }
+        }
+
+        // insufficient material
+        let all_pieces = self.chessboard.all_pieces;
+        let count = all_pieces.count();
+
+        if count == 2 {
+            return Outcome::Finished(None);
+        }
+        let mut white_bishops = self.chessboard.get_piece_bitboard(Color::White, PieceType::Bishop);
+        let white_knights = self.chessboard.get_piece_bitboard(Color::White, PieceType::Knight);
+        let mut black_bishops = self.chessboard.get_piece_bitboard(Color::Black, PieceType::Bishop);
+        let black_knights = self.chessboard.get_piece_bitboard(Color::Black, PieceType::Knight);
+
+        let white_minors = white_bishops | white_knights;
+        let black_minors = black_bishops | black_knights;
+
+        if count == 3 {
+            if !white_minors.is_empty() || !black_minors.is_empty() {
+                return Outcome::Finished(None);
+            }
+        }
+        if count == 4 {
+            // K + N vs K + N
+            if white_bishops.is_empty() && black_bishops.is_empty() {
+                return Outcome::Finished(None);
+            }
+
+            if black_bishops.count() == 2 {
+                if let (Some(sq1), Some(sq2)) = (black_bishops.pop_msb(), black_bishops.pop_msb()) {
+                    if sq1.colour() == sq2.colour() {
+                        return Outcome::Finished(None);
+                    }
+                }
+            }
+            if white_bishops.count() == 2 {
+                if let (Some(sq1), Some(sq2)) = (white_bishops.pop_msb(), white_bishops.pop_msb()) {
+                    if sq1.colour() == sq2.colour() {
+                        return Outcome::Finished(None);
+                    }
+                }
+            }
+        }
+
+        Outcome::Unfinished
     }
 
     pub fn is_geometrically_valid(&self, mov: &ChessMove) -> bool {
