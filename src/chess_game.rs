@@ -1,11 +1,20 @@
-use super::{
-    CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessPosition, ChessSquare, Color, PieceType, ZobristKeys,
-};
+use super::{CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessPosition, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Unfinished,
     Finished(Option<Color>),
+}
+
+impl Outcome {
+    pub fn to_f32(&self) -> Option<[f32; 3]> {
+        match self {
+            Outcome::Finished(Some(Color::White)) => Some([1.0, 0.0, 0.0]),
+            Outcome::Finished(None) => Some([0.0, 1.0, 0.0]),
+            Outcome::Finished(Some(Color::Black)) => Some([0.0, 0.0, 1.0]),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,10 +23,19 @@ pub enum RuleSet {
     PseudoLegal,
 }
 
+impl RuleSet {
+    pub fn is_legal(&self) -> bool {
+        match self {
+            RuleSet::Legal => true,
+            RuleSet::PseudoLegal => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ChessGame {
+    // this holds global data for the mcts arena
     pub position: ChessPosition,
-    pub halfmove_clock: u32,
     pub fullmove_counter: u32,
     pub game_history: Vec<ChessPosition>,
     pub rule_set: RuleSet,
@@ -103,7 +121,6 @@ impl ChessGame {
 
         ChessGame {
             position,
-            halfmove_clock,
             fullmove_counter,
             game_history: Vec::new(),
             rule_set: RuleSet::Legal,
@@ -163,7 +180,7 @@ impl ChessGame {
         fen.push(' ');
         fen.push_str(&self.position.en_passant.map_or("-".to_string(), |sq| sq.name()));
         fen.push(' ');
-        fen.push_str(&self.halfmove_clock.to_string());
+        fen.push_str(&self.position.halfmove_clock.to_string());
         fen.push(' ');
         fen.push_str(&self.fullmove_counter.to_string());
 
@@ -217,13 +234,12 @@ impl ChessGame {
         print!("{board}");
     }
 
-    // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible
-    // moves.
-    pub fn make_move(mut self, mov: &ChessMove) {
+    // should make pseudolegal/legal moves indiscriminantly. should never be passed impossible moves.
+    pub fn make_move(&mut self, mov: &ChessMove) {
         if self.position.side_to_move == Color::Black {
             self.fullmove_counter += 1;
         }
-        self.position = self.position.make_move(mov);
+        self.position.make_move(mov);
 
         self.game_history.push(self.position.clone());
     }
@@ -232,7 +248,7 @@ impl ChessGame {
         // this defeats the purpose of make unmake. who cares
         let entry = self.game_history.pop().expect("No history to unmake");
         self.position = entry;
-        self.halfmove_clock -= 1;
+        self.position.halfmove_clock -= 1;
         self.position.zobrist_hash = self.position.calculate_hash();
 
         // let current_piece = self.chessboard.get_piece_at(mov.to).expect("chessboard desync: Piece missing on unmake");
@@ -269,26 +285,20 @@ impl ChessGame {
     }
 
     pub fn check_game_state(&self) -> Outcome {
+        let (allies, enemies) = match self.position.side_to_move {
+            Color::White => (self.position.chessboard.white_occupancy, self.position.chessboard.black_occupancy),
+            Color::Black => (self.position.chessboard.black_occupancy, self.position.chessboard.white_occupancy),
+        };
         // PseudoLegal and Legal Checks
-        if self.halfmove_clock >= 100 {
+        if self.position.halfmove_clock >= 100 {
             return Outcome::Finished(None);
         }
 
-        let repetition_count = self.game_history.iter().filter(|entry| entry.zobrist_hash == self.zobrist_hash).count();
+        let repetition_count =
+            self.game_history.iter().filter(|entry| entry.zobrist_hash == self.position.zobrist_hash).count();
 
-        if repetition_count >= 2 {
+        if repetition_count >= 3 {
             return Outcome::Finished(None);
-        }
-
-        // King capture
-        let white_king = self.position.chessboard.get_piece_bitboard(Color::White, PieceType::King);
-        let black_king = self.position.chessboard.get_piece_bitboard(Color::Black, PieceType::King);
-
-        if white_king.is_empty() {
-            return Outcome::Finished(Some(Color::Black));
-        }
-        if black_king.is_empty() {
-            return Outcome::Finished(Some(Color::White));
         }
 
         if self.rule_set == RuleSet::PseudoLegal {
@@ -297,9 +307,20 @@ impl ChessGame {
 
         // Legal Checks
         // checkmate
-        let mut king_bb = self.position.chessboard.get_piece_bitboard(self.position.side_to_move, PieceType::King);
+        let king_bb = self.position.chessboard.get_piece_bitboard(self.position.side_to_move, PieceType::King);
         // Safe, king must exist otherwise wouldve returned earlier
-        let king_sq = king_bb.pop_lsb().unwrap();
+        let king_sq = king_bb.lsb_square().unwrap();
+        let mut sqs = ChessBoard::KING_ATTACKS[king_sq.0 as usize];
+        sqs.set(king_sq);
+        sqs = sqs & !enemies;
+        let sqs = std::iter::from_fn(|| sqs.pop_msb());
+        if sqs
+            .map(|sq| self.position.chessboard.is_square_attacked(sq, self.position.side_to_move.opposite()))
+            .all(|x| x == true)
+        {
+            return Outcome::Finished(Some(self.position.side_to_move.opposite()));
+        }
+
         let mut legal_moves = self.position.generate_pseudolegal();
         legal_moves.retain(|x| self.position.is_legal(x));
 
