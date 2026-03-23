@@ -110,14 +110,17 @@ impl ChessGame {
             }
         }
 
-        let position = ChessPosition {
+        let mut position = ChessPosition {
             chessboard,
             side_to_move: if side_str == "w" { Color::White } else { Color::Black },
             castling_rights: CastlingRights::from_fen(castling_str),
             en_passant,
             halfmove_clock,
             zobrist_hash: 0,
+            pseudolegal_moves: Vec::new()
         };
+
+        position.pseudolegal_moves = position.generate_pseudolegal();
 
         ChessGame {
             position,
@@ -242,6 +245,7 @@ impl ChessGame {
         self.position.make_move(mov);
 
         self.game_history.push(self.position.clone());
+        self.position.pseudolegal_moves = self.position.generate_pseudolegal();
     }
 
     pub fn unmake_move(&mut self) {
@@ -321,7 +325,7 @@ impl ChessGame {
             return Outcome::Finished(Some(self.position.side_to_move.opposite()));
         }
 
-        let mut legal_moves = self.position.generate_pseudolegal();
+        let mut legal_moves = self.position.pseudolegal_moves.clone();
         legal_moves.retain(|x| self.position.is_legal(x));
 
         if legal_moves.is_empty() {
