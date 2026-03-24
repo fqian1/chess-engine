@@ -171,14 +171,13 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
   row-gutter: 1.5em,
   column-gutter: 1em,
 
-  [$M C T S$], [Monte Carlo Search Tree, a heuristic search algorithm],
-  [$P o l i c y$], [The $i^("th")$ symbol in the source message, where $a_i in S_m$],
-  [$B_g$], [The decoded message, being a sequence of $g$ source symbols $b_1 b_2 ... b_g$],
-  [$b_i$], [The $i^("th")$ symbol in the decoded message, where $b_i in S_m$],
-  [$C_h$], [The transmitted (compressed) message, being a sequence of $h$ Tunstall codewords $c_1 c_2 ... c_h$],
-  [$c_i$], [The $i^("th")$ codeword in the transmitted message, where $c_i in T_n$],
-  [$D_h$], [The received (compressed) message, which for a complete Tunstall code is a sequence of $h$ Tunstall codewords $d_1 d_2 ... d_h$],
-  [$d_i$], [The $i^("th")$ codeword in the received message, where $d_i in T_n$ for a complete Tunstall code],
+  [$Q(s, a)$], [The total reward accumulated from state],
+  [$C(s)$], [CPUCT],
+  [$S_i$], [Upper confidence bound],
+  [$overline(x_i)$], [The Mean Value of the current node],
+  [$c$], [The Exploitation parameter],
+  [$N$], [The current node's Visit Count],
+  [$n_i$], [The Visit Count of the child],
 )
 
 // ==========================================
@@ -191,15 +190,9 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
   row-gutter: 1.5em,
 
   [MCTS], [Monte Carlo Tree Search],
-  [BPSK], [Binary Phase Shift Keying],
-  [BSC], [Binary Symmetric Channel],
-  [DCT], [Discrete Cosine Transform],
-  [ECC], [Error Correcting Codes],
-  [FEC], [Forward Error Correction],
-  [JPEG], [Joint Photographic Experts Group],
-  [MPEG], [Moving Pictures Experts Group],
-  [SER], [Symbol Error Rate],
-  [SNR], [Signal to Noise Ratio],
+  [UCB1], [Upper Confidence Bound 1],
+  [PUCT], [Predictor + Upper Confidence Bound applied to Trees],
+  [CPUCT], [Exploration Predictor Constant],
 )
 
 // ==========================================
@@ -237,6 +230,7 @@ with a lot more compute and time)
   - zobrist hashing
   - state conversions to and from fen strings
   - bitboards and bitewise intrinsics
+  - a fucking move generator
  - Architect a 2 pass autoregressive encoder and integrate it with the chess engine
  - construct a bipartite MCTS to self play on
  - train on generated self play data
@@ -256,7 +250,9 @@ that was just a terrible mistake, however i am just built different
 = Literature Review
 == Chess fundamentals
 === Game rules
+Chess is a zero-sum, perfect-information game with a state-space complexity estimated at $10^40$ and a game-tree complexity of approximately $10^120$ (the Shannon Number). Traditionally, the game is governed by strict legal move constraints; however, this investigation explores "pseudo-legal" environments, where the move generator ignores king safety (pins and checks) to observe if the transformer can implicitly learn these higher-order constraints through punishment propagation.
 === Board representation
+The evolution of board representation has moved from simple piece-lists to bitboards—64-bit integers where each bit represents a square. Bitboards allow for high-performance move generation using bitwise intrinsics (e.g., `_mm_popcnt_u64`). In modern deep learning contexts, these are often expanded into a $8 times 8 times N$ tensor (where $N$ represents piece types, history, and repetitions) to suit the inductive biases of convolutional or attention-based architectures.
 === Move generation
 == Machine learning in chess
 === Policy
@@ -301,11 +297,37 @@ the project is available on github.
 
 == System architecture overview
 == Client Architecture
+I decided to implement the chess client in rust, to meet the high performance demands of
+monte carlo simulation rollout and memory safety with concurrency. I could not find any
+chess crates that supported play in both pseudo legal and legal rule sets, so I decided to build
+my own. This meant I could also tightly integrate the neural network architecture with
+the client, reducing overhead to a minimum to maximise training efficiency.
 === Bitboard
+Bitboards are a way to represent the chess board. They are stored as Unsigned 64 bit integers
+in the client, where each bit conveniently perfectly represents a square on the chess board.
+12 Bitboards can be used to represent the whole chessboard, one bitboard for each piece for each colour.
+This packs the whole chessboard representation into just 12*8 Bytes, however convenience bitboards are
+also added in the form of all black pieces, all white piece and all pieces. these bitboards are
+unecessary for the transformer encodings, but are convenient for the move generator and simple
+to update in the move maker. Using bitboards to represent the chess board allows for bitwise intrinsics
+to be used in operations, which cpus are obviously much faster at doing.
 === Chessboard
+Chessboard is a collection of 15 Bitboards, 12 for pieces and occupancy bitboards for pieces.
+Const directional masks are created for all pieces for all squares, as well
+as a mask for each square between 2 squares. This allows for easy ray casting, without ray
+casting by checking if the the squares in a move are contained within a pieces directional mask,
+and then by checking if the between mask is occupied. etc.
 === ChessSquare
+ChessSquare are integer representations of chessquares. they are stored as u8's internally
+in the client, and range from values 0 to 63 where 0 is the bottom left square (A0) and 63
+is the top right corner square (H8). They are used to represent chess moves, and make handling
+bitboards and string representations convenient.
 === CastlingRights
+Castling rights represent rights to castle for each side for each side. It is a 4 bit bitmask,
+1 bit for each sides castle, queen or kingside. It is stored internally as a u8, though only 4
+bits are used. It is also stored as a bitmask, for hashing convenience.
 === ChessMove
+Chess move is
 === ChessSquare
 === ChessGame
 == Model Architecture
@@ -404,6 +426,7 @@ A primary advantage of Typst is its intuitive mathematical notation. Equations c
 $ alpha(iota, x_2) = sum_(x_1, d_(iota-1)) alpha(iota - 1, x_1) op("Pr") { bold(r)_(n(iota-1)+x_1, n iota + x_2), bold(t)_(iota-1) } $
 
 Inline math is also supported, for example to specify $1 <= iota < N$. Typst's syntax remains readable even for complex multiline expressions:
+testing testings
 
 // Figure Example with subfigures
 #figure(
