@@ -1,4 +1,4 @@
-use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::{Outcome, RuleSet}};
+use crate::{Bitboard, CastlingRights, ChessBoard, ChessGame, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::{Outcome, RuleSet}};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessPosition {
@@ -8,6 +8,7 @@ pub struct ChessPosition {
     pub en_passant:      Option<ChessSquare>,
     pub halfmove_clock:  u32,
     pub zobrist_hash:    u64,
+    pub pseudolegal_moves: Vec<ChessMove>
 }
 
 impl ChessPosition {
