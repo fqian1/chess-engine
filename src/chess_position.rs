@@ -1,14 +1,17 @@
-use crate::{Bitboard, CastlingRights, ChessBoard, ChessGame, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::{Outcome, RuleSet}};
+use crate::{
+    Bitboard, CastlingRights, ChessBoard, ChessGame, ChessMove, ChessSquare, Color, PieceType, ZobristKeys,
+    chess_game::{Outcome, RuleSet},
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessPosition {
-    pub chessboard:      ChessBoard,
-    pub side_to_move:    Color,
+    pub chessboard: ChessBoard,
+    pub side_to_move: Color,
     pub castling_rights: CastlingRights,
-    pub en_passant:      Option<ChessSquare>,
-    pub halfmove_clock:  u32,
-    pub zobrist_hash:    u64,
-    pub pseudolegal_moves: Vec<ChessMove>
+    pub en_passant: Option<ChessSquare>,
+    pub halfmove_clock: u32,
+    pub zobrist_hash: u64,
+    pub pseudolegal_moves: Vec<ChessMove>,
 }
 
 impl ChessPosition {
@@ -202,15 +205,26 @@ impl ChessPosition {
         moves
     }
 
-    pub fn get_squares(&self) -> (Vec<ChessSquare>, Vec<ChessSquare>) {
-        let moves = self.generate_pseudolegal();
-        let mut from = Vec::with_capacity(moves.len());
-        let mut to = Vec::with_capacity(moves.len());
-        moves.into_iter().for_each(|mov| {
-            from.push(mov.from);
-            to.push(mov.to);
-        });
-        (from, to)
+    pub fn make_from_sq_mask(&self, legal: bool) -> [bool; 64] {
+        let mut moves = self.pseudolegal_moves.clone();
+        if legal {
+            moves.retain(|mov| self.is_legal(mov));
+        }
+        let sqs: Vec<ChessSquare> = moves.iter().map(|mov| mov.from).collect();
+        let mut mask = [false; 64];
+        sqs.iter().for_each(|sq| mask[sq.0 as usize] = true);
+        mask
+    }
+
+    pub fn make_to_sq_mask(&self, selected_sq: ChessSquare, legal: bool) -> [bool; 64] {
+        let mut moves = self.pseudolegal_moves.clone();
+        if legal {
+            moves.retain(|mov| self.is_legal(mov));
+        }
+        let sqs: Vec<ChessSquare> = moves.iter().filter(|mov| mov.from == selected_sq).map(|mov| mov.to).collect();
+        let mut mask = [false; 64];
+        sqs.iter().for_each(|sq| mask[sq.0 as usize] = true);
+        mask
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
