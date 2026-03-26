@@ -8,7 +8,7 @@ use burn::{
 use rand::rngs::SmallRng;
 
 use crate::{
-    ChessGame, ChessTransformer, MctsConfig, MctsNodeAction, MctsNodeState, ReplayBuffer,
+    ChessGame, ChessTransformer, MctsConfig, ReplayBuffer,
     data::{ChessBatch, NetworkInputs, NetworkLabels, TrainingSample},
     model::ChessTransformerConfig,
 };

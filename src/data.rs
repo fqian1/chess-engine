@@ -35,7 +35,7 @@ impl NetworkInputs {
         NetworkInputs::from_position(position, None)
     }
 
-    pub fn from_position(position: &ChessPosition, selected_sq: Option<ChessSquare>) -> Self {
+    pub fn from_position(position: &ChessPosition, selected_sq: Option<&ChessSquare>) -> Self {
         let (chess_board, castling_rights, ep_sq) = if position.side_to_move == Color::White {
             (position.chessboard.clone(), position.castling_rights, position.en_passant)
         } else {
