@@ -1,7 +1,7 @@
-use burn::prelude::Backend;
+use burn::{prelude::Backend}
 
 use crate::{
-    ChessGame, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, TrainingConfig, model_make_outputs,
+    ChessGame, ChessMove, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, TrainingConfig, model_make_outputs
 };
 
 pub struct MctsConfig {
@@ -9,149 +9,142 @@ pub struct MctsConfig {
     pub c_puct: f32,
     pub temperature: f32,
 }
+/*
+edge_arena
+node_arena
+position_arena
+*/
 
-#[derive(Debug, Clone)]
-pub struct MctsNodeState {
-    position: ChessPosition,
-    value:    Option<[f32; 3]>, // from network or outcome
-    edges:    Option<Vec<MctsEdge>>,
-    parent_edge:   Option<usize>,
+pub struct NodeData {
+    chess_position_idx: usize,      // idx into Vec<ChessPosition>
+    edge_idxs: Option<[usize; 16]>, // can only select from 16 pieces.
+    parent_edge_idx: Option<usize>, // None if root.
+    value: Option<[f32; 3]>,        // from game.outcome -> network value, else None
 }
 
-#[derive(Debug, Clone)]
-pub struct MctsNodeAction<'a> {
-    position: &'a ChessPosition, // ref to state node position
-    value: Option<[f32; 3]>,
-    edges: Option<Vec<MctsEdge>>,
-    selected_sq: ChessSquare,
-    parent_edge: usize,
+pub enum MctsNode {
+    PieceSelect { data: NodeData },
+    PieceMove { selected_sq: ChessSquare, data: NodeData },
 }
 
-#[derive(Debug, Clone)]
-pub struct MctsEdge {
-    pub square: ChessSquare,
-    pub confidence: f32, // the policy prob
-    pub visits: u32,
-    pub total_value: [f32; 3], // cumulative value of leaf nodes
-    pub mean_value: [f32; 3],  // total val / visits
-    pub child_node: Option<usize>,
-}
-
-impl MctsNodeState {
-    pub fn new(game: &ChessGame, parent: Option<usize>) -> Self {
-        Self { position: game.position.clone(), value: None, edges: None, parent_edge: parent }
+impl Default for NodeData {
+    fn default() -> Self {
+        Self {
+            chess_position_idx: 0, value: None, edge_idxs: None, parent_edge_idx: None
+        }
     }
 }
 
-impl<'a> MctsNodeAction<'a> {
-    pub fn new(mcts_state: &'a MctsNodeState, selected_sq: ChessSquare, parent: usize) -> Self {
-        Self { position: &mcts_state.position, selected_sq, value: None, edges: None, parent_edge: parent }
-    }
-}
-
-trait Node {
-    type Next;
-    fn new_node(&self, position: &ChessPosition, parent_edge: usize) -> Self::Next;
-
-    fn position(&self) -> &ChessPosition;
-    fn value(&self) -> Option<[f32; 3]>;
-    fn edges(&self) -> &Option<Vec<MctsEdge>>;
-    fn edges_mut(&mut self) -> &mut Option<Vec<MctsEdge>>;
-
-    fn get_mask(&self, legal: bool) -> [bool; 64];
-
-    fn total_visits(&self) -> Result<u32, ()> {
-        if let Some(edges) = self.edges() {
-            return Ok(edges.iter().map(|e| e.visits).sum());
-        };
-        return Err(());
+impl NodeData {
+    pub fn new(chess_position_idx: usize, parent_edge_idx: usize) -> Self {
+        Self {
+            chess_position_idx, value: None, edge_idxs: None, parent_edge_idx: Some(parent_edge_idx)
+        }
     }
 
-    fn select_best_edge(&self, c_puct: f32, side_to_move: Color) -> Result<&MctsEdge, ()> {
-        let total_visits = self.total_visits()?;
-        let edges = self.edges().as_ref().unwrap();
-        edges.iter().max_by(|x, y| {
+    pub fn get_edges<'a>(&self, edge_arena: &'a [MctsEdge]) -> Option<&'a [MctsEdge]> {
+        // idxs are contiguous right? when i expand it pushes all edges sequentially so it must be
+        // contiguous right? damn its ugly
+        let idxs = self.edge_idxs?;
+        let smallest = idxs.iter().min()?;
+        let largest = idxs.iter().max()?;
+        Some(&edge_arena[*smallest..=*largest])
+    }
+
+    fn total_visits(&self, edge_arena: &[MctsEdge]) -> Option<u32> {
+        let edges = self.get_edges(edge_arena)?;
+        Some(edges.iter().map(|e| e.visits).sum())
+    }
+
+    fn select_best_edge(&self, c_puct: f32, side_to_move: Color, edge_arena: &[MctsEdge]) -> Option<usize> {
+        let total_visits = self.total_visits(edge_arena)?;
+        let edges = self.get_edges(edge_arena)?;
+        let edge = edges.iter().max_by(|x, y| {
             let a = x.get_puct(c_puct, &total_visits, side_to_move);
             let b = y.get_puct(c_puct, &total_visits, side_to_move);
             a.total_cmp(&b)
-        }).ok_or(()) // lol i dont distuinguish between None and empty vec. just make sure
-                     // i check outcome of node before expanding and should be fine
-    }
+        });
 
-    fn to_network_inputs(&self) -> NetworkInputs;
-}
-
-impl<'a> Node for MctsNodeAction<'a> {
-    type Next = MctsNodeState;
-    fn new_node(&self, position: &ChessPosition, parent_edge: usize) -> Self::Next {
-        MctsNodeState {
-            position: position.clone(), value: None, edges: None, parent_edge: Some(parent_edge)
+        // *pukes*
+        for i in 0..edge_arena.len() {
+            if edge_arena[i] == *edge? {
+                return Some(i);
+            }
         }
-    }
-    fn position(&self) -> &'a ChessPosition {
-        self.position
-    }
-    fn value(&self) -> Option<[f32; 3]> {
-        self.value
-    }
-    fn edges_mut(&mut self) -> &mut Option<Vec<MctsEdge>> {
-        &mut self.edges
-    }
-    fn edges(&self) -> &Option<Vec<MctsEdge>> {
-        &self.edges
-    }
-    fn to_network_inputs(&self) -> NetworkInputs {
-        NetworkInputs::from_position(self.position(), Some(self.selected_sq))
-    }
-    fn get_mask(&self, legal: bool) -> [bool; 64] {
-        let mut moves = self.position().pseudolegal_moves.clone();
-        if legal {
-            moves.retain(|mov| self.position().is_legal(mov));
-        }
-        let sqs: Vec<ChessSquare> = moves.iter().filter(|mov| mov.from == self.selected_sq).map(|mov| mov.to).collect();
-        let mut mask = [false; 64];
-        sqs.iter().for_each(|sq| mask[sq.0 as usize] = true);
-        mask
+        None
     }
 }
 
-impl Node for MctsNodeState {
-    type Next = MctsNodeAction;
-    fn new_node(&self, parent_edge: usize) -> Self::Next {
-        MctsNodeAction {
-            position: &self.position, value: None, edges: None, selected_sq: ChessSquare::default(), parent_edge
+impl MctsNode {
+    fn node_data(&self) -> &NodeData {
+        match self {
+            Self::PieceSelect { data } => data,
+            Self::PieceMove { data, .. } => data,
         }
     }
-    fn position(&self) -> &ChessPosition {
-        &self.position
-    }
-    fn value(&self) -> Option<[f32; 3]> {
-        self.value
-    }
-    fn edges(&self) -> &Option<Vec<MctsEdge>> {
-        &self.edges
-    }
-    fn edges_mut(&mut self) -> &mut Option<Vec<MctsEdge>> {
-        &mut self.edges
-    }
-    fn to_network_inputs(&self) -> NetworkInputs {
-        NetworkInputs::from_position(self.position(), None)
-    }
-    fn get_mask(&self, legal: bool) -> [bool; 64] {
-        let mut moves = self.position().pseudolegal_moves.clone();
-        if legal {
-            moves.retain(|mov| self.position().is_legal(mov));
+
+    fn node_data_mut(&mut self) -> &mut NodeData {
+        match self {
+            Self::PieceSelect { data } => data,
+            Self::PieceMove { data, .. } => data,
         }
-        let sqs: Vec<ChessSquare> = moves.iter().map(|mov| mov.from).collect();
+    }
+
+    pub fn get_mask(&self, legal: bool, positions: &[ChessPosition]) -> [bool; 64] {
         let mut mask = [false; 64];
-        sqs.iter().for_each(|sq| mask[sq.0 as usize] = true);
+        let position = &positions[self.node_data().chess_position_idx];
+        let mut moves = position.pseudolegal_moves.clone();
+        if legal {
+            moves.retain(|mov| position.is_legal(mov));
+        }
+
+        match self {
+            Self::PieceSelect {..} => {
+                moves.iter().for_each(|mov| mask[mov.from.0 as usize] = true);
+            }
+            Self::PieceMove {selected_sq, ..} => {
+                moves.retain(|mov| mov.from == *selected_sq);
+                moves.iter().for_each(|mov| mask[mov.to.0 as usize] = true);
+            }
+        }
         mask
     }
+
+    fn to_network_inputs(&self, positions: &[ChessPosition]) -> NetworkInputs {
+        let position = &positions[self.node_data().chess_position_idx];
+        match self {
+            Self::PieceSelect {..} => {
+                NetworkInputs::from_position(position, None)
+            }
+            Self::PieceMove {  selected_sq,.. } => {
+                NetworkInputs::from_position(position, Some(selected_sq))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq )]
+pub struct MctsEdge {
+    pub square:      ChessSquare,
+    pub confidence:  f32, // the policy prob
+    pub visits:      u32,
+    pub total_value: [f32; 3], // cumulative value of leaf nodes
+    pub mean_value:  [f32; 3], // total val / visits
+    pub child_node_idx:   Option<usize>, // None if not explored
+    pub parent_node_idx:  usize,
 }
 
 impl MctsEdge {
-    pub fn new(sq: ChessSquare, confidence: f32) -> Self {
-        MctsEdge { square: sq, confidence, total_value: [0.0; 3], mean_value: [0.0; 3], visits: 0, child_node: None }
+    pub fn new(sq: ChessSquare, confidence: f32, parent_idx: usize) -> Self {
+        MctsEdge {
+            square: sq,
+            confidence,
+            total_value: [0.0; 3],
+            mean_value: [0.0; 3],
+            visits: 0,
+            child_node_idx: None,
+            parent_node_idx: parent_idx,
+        }
     }
 
     pub fn get_puct(&self, c_puct: f32, total_parent_visits: &u32, side_to_move: Color) -> f32 {
@@ -162,7 +155,7 @@ impl MctsEdge {
         let exploitation = value / *total_parent_visits as f32;
         let prior = self.confidence;
         // idk lol
-        exploitation + c_puct * prior * *total_parent_visits as f32 / (1 + self.visits) as f32
+        exploitation + c_puct * prior * (*total_parent_visits as f32).sqrt() / (1 + self.visits) as f32
     }
 
     pub fn update(&mut self, value: [f32; 3]) {
@@ -173,19 +166,40 @@ impl MctsEdge {
         // self.total_value.iter_mut().zip(value.iter()).for_each(|(a, b)| *a = *a + b);
         self.mean_value.iter_mut().zip(self.total_value.iter()).for_each(|(a, b)| *a = b / self.visits as f32);
     }
+
+    // is this method supposed to belong here? annoying to get the current idx
+    pub fn make_node(&self, nodes: &Vec<MctsNode>, positions: &mut Vec<ChessPosition>) -> MctsNode{
+        let node = &nodes[self.parent_node_idx];
+        match node {
+            MctsNode::PieceSelect { data } => {
+                let node = NodeData::new(data.chess_position_idx, current_idx);
+                MctsNode::PieceMove { selected_sq: self.square, data: node }
+            }
+            MctsNode::PieceMove { selected_sq, data } => {
+                let parent_node = &nodes[self.parent_node_idx];
+                let mut position = positions[parent_node.node_data().chess_position_idx].clone();
+                let mov = ChessMove::new(*selected_sq, self.square, None);
+                position.make_move(&mov);
+                positions.push(position);
+                let node = NodeData::new(data.chess_position_idx + 1, current_idx);
+                MctsNode::PieceMove { selected_sq: self.square, data: node }
+            }
+        }
+    }
 }
 
 pub fn expand<B: Backend>(
-    nodes: &mut Vec<impl Node>,
+    nodes: &mut [MctsNode], // list of leaf nodes to expand.
+    positions: &[ChessPosition],
     model: ChessTransformer<B>,
     config: &TrainingConfig,
     device: &B::Device,
 ) {
-    let inputs = nodes.iter().map(|node| node.to_network_inputs()).collect();
+    let inputs = nodes.iter().map(|node| node.to_network_inputs(positions)).collect();
     let masks: Option<Vec<bool>> = if config.masked {
         let mut masks: Vec<bool> = Vec::with_capacity(config.batch_size * 64);
         nodes.iter().for_each(|node| {
-            masks.extend_from_slice(&node.get_mask(config.legal));
+            masks.extend_from_slice(&node.get_mask(config.legal, positions));
         });
         Some(masks)
     } else {
@@ -194,39 +208,33 @@ pub fn expand<B: Backend>(
     // shouldn't be making 64 edges but whatever
     let outputs = model_make_outputs(model.clone(), &inputs, config, masks, device);
     nodes.iter_mut().zip(outputs.iter()).for_each(|(node, output)| {
-        if node.edges_mut().is_none() {
-            *node.edges_mut() = Some(Vec::with_capacity(64));
-        } else {
-            return;
+        let mut sqs = output.as_squares().into_iter();
+        let edges: [MctsEdge; 64] =
+            std::array::from_fn(|_| sqs.next().map(|e| MctsEdge::new(e.0, e.1)).unwrap_or_default());
+        match node {
+            MctsNode::PieceSelect { data } => data.edge_idxs = Some(edges),
+            MctsNode::PieceMove { data, .. } => data.edge_idxs = Some(edges),
         }
-        let sqs = output.as_squares();
-        for (sq, confidence) in sqs {
-            let edge = MctsEdge::new(sq, confidence);
-            node.edges_mut().as_mut().unwrap().push(edge);
-        }
-    })
+    });
 }
 
 pub struct Mcts<'a> {
     pub root: &'a ChessGame,
-    pub state_arena: Vec<MctsNodeState>,
-    pub action_arena: Vec<MctsNodeAction<'a>>,
+    pub node_arena: Vec<MctsNode>,
+    pub position_arena: Vec<ChessPosition>,
+    pub edges_arena: Vec<MctsEdge>,
     pub path: Vec<MctsEdge>,
-    pub current_idx: usize,
 }
 
 impl<'a> Mcts<'a> {
-    pub fn new(game: &'a ChessGame) -> Self {
-        Self {
+    pub fn new(game: &'a ChessGame, size: usize) -> Self {
+        Mcts{
             root: game,
-            state_arena: Vec::new(),
-            action_arena: Vec::new(),
-            path: Vec::new(),
-                current_idx: 0
+            node_arena: Vec::with_capacity(size* 2),
+            position_arena: Vec::with_capacity(size),
+            edges_arena: Vec::with_capacity(size * 16),
+            path: Vec::new()
         }
-    }
-
-    pub fn next(&self) {
     }
 }
 
@@ -237,8 +245,5 @@ pub fn run_mcts<B: Backend>(
     training_config: &TrainingConfig,
     device: &B::Device,
 ) {
-
-    for count in 0..mcts_config.num_simulations {
-
-    }
+    for count in 0..mcts_config.num_simulations {}
 }
