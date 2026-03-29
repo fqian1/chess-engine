@@ -17,28 +17,12 @@ impl Outcome {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RuleSet {
-    Legal,
-    PseudoLegal,
-}
-
-impl RuleSet {
-    pub fn is_legal(&self) -> bool {
-        match self {
-            RuleSet::Legal => true,
-            RuleSet::PseudoLegal => false,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ChessGame {
     // this holds global data for the mcts arena
     pub position: ChessPosition,
     pub fullmove_counter: u32,
     pub game_history: Vec<ChessPosition>,
-    pub rule_set: RuleSet,
     pub outcome: Outcome,
 }
 
@@ -126,7 +110,6 @@ impl ChessGame {
             position,
             fullmove_counter,
             game_history: Vec::new(),
-            rule_set: RuleSet::Legal,
             outcome: Outcome::Unfinished,
         }
     }
@@ -288,7 +271,7 @@ impl ChessGame {
         //}
     }
 
-    pub fn check_game_state(&self) -> Outcome {
+    pub fn check_game_state(&self, legal: bool) -> Outcome {
         let (allies, enemies) = match self.position.side_to_move {
             Color::White => (self.position.chessboard.white_occupancy, self.position.chessboard.black_occupancy),
             Color::Black => (self.position.chessboard.black_occupancy, self.position.chessboard.white_occupancy),
@@ -305,7 +288,7 @@ impl ChessGame {
             return Outcome::Finished(None);
         }
 
-        if self.rule_set == RuleSet::PseudoLegal {
+        if legal {
             return Outcome::Unfinished;
         }
 
