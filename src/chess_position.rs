@@ -205,26 +205,25 @@ impl ChessPosition {
         moves
     }
 
-    pub fn make_from_sq_mask(&self, legal: bool) -> [bool; 64] {
-        let mut moves = self.pseudolegal_moves.clone();
-        if legal {
-            moves.retain(|mov| self.is_legal(mov));
+    pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
+        match from_sq {
+            Some(sq) => {
+                std::array::from_fn::<bool, 64, _>(|i| {
+                    self.pseudolegal_moves
+                        .iter()
+                        .filter(|mov| !legal || self.is_legal(mov))
+                        .any(|mov| mov.from == sq && mov.to.0 == i as u8)
+                })
+            }
+            None => {
+                std::array::from_fn::<bool, 64, _>(|i| {
+                    self.pseudolegal_moves
+                        .iter()
+                        .filter(|mov| !legal || self.is_legal(mov))
+                        .any(|mov| mov.from.0 == i as u8)
+                })
+            }
         }
-        let sqs: Vec<ChessSquare> = moves.iter().map(|mov| mov.from).collect();
-        let mut mask = [false; 64];
-        sqs.iter().for_each(|sq| mask[sq.0 as usize] = true);
-        mask
-    }
-
-    pub fn make_to_sq_mask(&self, selected_sq: ChessSquare, legal: bool) -> [bool; 64] {
-        let mut moves = self.pseudolegal_moves.clone();
-        if legal {
-            moves.retain(|mov| self.is_legal(mov));
-        }
-        let sqs: Vec<ChessSquare> = moves.iter().filter(|mov| mov.from == selected_sq).map(|mov| mov.to).collect();
-        let mut mask = [false; 64];
-        sqs.iter().for_each(|sq| mask[sq.0 as usize] = true);
-        mask
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
@@ -384,7 +383,7 @@ impl ChessPosition {
         hash
     }
 
-    pub fn check_game_state(&self, rule_set: RuleSet) -> Outcome {
+    pub fn check_game_state(&self, legal: bool) -> Outcome {
         // PseudoLegal and Legal Checks
         if self.halfmove_clock >= 100 {
             return Outcome::Finished(None);
@@ -398,7 +397,7 @@ impl ChessPosition {
             return Outcome::Finished(Some(Color::White));
         }
 
-        if rule_set == RuleSet::PseudoLegal {
+        if legal {
             return Outcome::Unfinished;
         }
 
