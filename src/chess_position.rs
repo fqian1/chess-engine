@@ -1,6 +1,5 @@
 use crate::{
-    Bitboard, CastlingRights, ChessBoard, ChessGame, ChessMove, ChessSquare, Color, PieceType, ZobristKeys,
-    chess_game::{Outcome, RuleSet},
+    Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -207,22 +206,18 @@ impl ChessPosition {
 
     pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
         match from_sq {
-            Some(sq) => {
-                std::array::from_fn::<bool, 64, _>(|i| {
-                    self.pseudolegal_moves
-                        .iter()
-                        .filter(|mov| !legal || self.is_legal(mov))
-                        .any(|mov| mov.from == sq && mov.to.0 == i as u8)
-                })
-            }
-            None => {
-                std::array::from_fn::<bool, 64, _>(|i| {
-                    self.pseudolegal_moves
-                        .iter()
-                        .filter(|mov| !legal || self.is_legal(mov))
-                        .any(|mov| mov.from.0 == i as u8)
-                })
-            }
+            Some(sq) => std::array::from_fn::<bool, 64, _>(|i| {
+                self.pseudolegal_moves
+                    .iter()
+                    .filter(|mov| !legal || self.is_legal(mov))
+                    .any(|mov| mov.from == sq && mov.to.0 == i as u8)
+            }),
+            None => std::array::from_fn::<bool, 64, _>(|i| {
+                self.pseudolegal_moves
+                    .iter()
+                    .filter(|mov| !legal || self.is_legal(mov))
+                    .any(|mov| mov.from.0 == i as u8)
+            }),
         }
     }
 
@@ -460,6 +455,25 @@ impl ChessPosition {
         }
 
         Outcome::Unfinished
+    }
+
+    pub fn expand_if_prom(&self, mov: ChessMove) -> Option<[ChessMove; 4]> {
+        let prom_rank = match self.side_to_move {
+            Color::White => 7,
+            Color::Black => 0,
+        };
+        if let Some(piece) = self.chessboard.get_piece_at(mov.from)
+            && matches!(piece.piece_type, PieceType::Pawn)
+            && mov.to.rank() == prom_rank
+        {
+            return Some([
+                mov.with_prom(PieceType::Knight),
+                mov.with_prom(PieceType::Bishop),
+                mov.with_prom(PieceType::Rook),
+                mov.with_prom(PieceType::Queen),
+            ]);
+        }
+        None
     }
 
     pub fn is_geometrically_valid(&self, mov: &ChessMove) -> bool {
