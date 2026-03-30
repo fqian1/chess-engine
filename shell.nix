@@ -9,6 +9,7 @@ in
     buildInputs = [
       rustNightly
       pkgs.cargo-public-api
+      pkgs.cargo-watch
     ];
     # Weird thing to expose vulkan backend
     shellHook = ''
