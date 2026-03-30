@@ -1,6 +1,6 @@
 use super::{ChessSquare, PieceType};
 
-#[derive(Hash, Copy,Clone, Debug, PartialEq, Eq)]
+#[derive(Hash, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ChessMove {
     pub from: ChessSquare,
     pub to: ChessSquare,
@@ -10,6 +10,10 @@ pub struct ChessMove {
 impl ChessMove {
     pub fn new(from: ChessSquare, to: ChessSquare, promotion: Option<PieceType>) -> Self {
         Self { from, to, promotion: promotion }
+    }
+
+    pub fn with_prom(&self, piece: PieceType) -> Self {
+        Self { from: self.from, to: self.to, promotion: Some(piece) }
     }
 
     pub fn from_uci(uci: &str) -> Result<Self, &'static str> {
