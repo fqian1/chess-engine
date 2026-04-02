@@ -1,27 +1,34 @@
 use burn::prelude::Backend;
 
 use crate::{
-    ChessGame, ChessMove, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, TrainingConfig,
-    chess_game::Outcome, model_make_outputs,
+    ChessGame, ChessMove, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, NetworkLabels, PieceType,
+    TrainingConfig, TrainingSample, XorShift64, chess_game::Outcome, model_make_outputs,
 };
+
+// should i refactor with these?
+struct PosIdx(usize);
+struct NodeIdx(usize);
+struct EdgeIdx(usize);
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct NodeData {
-    chess_position_idx: usize,
-    child_edge_idx: Option<(usize, usize)>, // None if un expanded
-    parent_edge_idx: Option<usize>,         // None if root
-    value: Option<[f32; 3]>,                // None if game outcome unfinished, replace with network value
-    is_terminal: bool,
+    chess_position_idx: usize,                // assigned on creation
+    child_edge_range: Option<(usize, usize)>, // assigned on expansion
+    parent_edge_idx: Option<usize>,           // assigned on creation (None if root), but unused. remove?
+    value: Option<[f32; 3]>,                  // assigned on expansion
+    is_terminal: bool,                        // assigned on traversal
+    visits: usize,                            // updated on traversal
 }
 
 impl NodeData {
     pub fn new(chess_position_idx: usize, parent_edge_idx: usize) -> Self {
         Self {
             chess_position_idx,
-            child_edge_idx: None,
+            child_edge_range: None,
             parent_edge_idx: Some(parent_edge_idx),
             value: None,
             is_terminal: false,
+            visits: 0,
         }
     }
 }
@@ -75,6 +82,7 @@ pub struct MctsEdge {
     mean_value: [f32; 3],          // total val / visits
     child_node_idx: Option<usize>, // None if not explored
     parent_node_idx: usize,
+    promotion_piece: Option<PieceType>,
 }
 
 impl MctsEdge {
@@ -87,7 +95,18 @@ impl MctsEdge {
             mean_value: [0.0; 3],
             child_node_idx: None,
             parent_node_idx,
+            promotion_piece: None,
         }
+    }
+
+    pub fn with_prom(mut self, piece: PieceType) -> Self {
+        self.promotion_piece = Some(piece);
+        self
+    }
+
+    pub fn to_value(&self) -> f32 {
+        let (w, d, l) = (self.mean_value[0], self.mean_value[1], self.mean_value[2]);
+        (w - l) / (w + d + l)
     }
 }
 
@@ -98,48 +117,79 @@ pub struct MctsConfig {
     pub num_simulations: usize,
     pub c_puct: f32,
     pub temperature: f32,
+    pub legal: bool,
 }
 
-pub struct Mcts<'a> {
-    pub root: &'a ChessGame,
+pub struct Mcts {
     pub config: MctsConfig,
     pub node_arena: Vec<MctsNode>,
     pub edge_arena: Vec<MctsEdge>,
     pub position_arena: Vec<ChessPosition>,
     pub path: Vec<usize>, // idx of edges
+    pub root: usize,
 }
 
-impl<'a> Mcts<'a> {
-    pub fn new(game: &'a ChessGame, size: usize, config: MctsConfig) -> Self {
+impl Mcts {
+    pub fn from_game(root: &ChessGame, size: usize, config: MctsConfig) -> Self {
+        let node = MctsNode::PieceSelect {
+            data: NodeData {
+                chess_position_idx: 0,
+                child_edge_range: None,
+                parent_edge_idx: None,
+                value: None,
+                is_terminal: false,
+                visits: 0,
+            },
+        };
+        let mut node_arena = Vec::with_capacity(size * 2);
+        node_arena.push(node);
+
+        let mut position_arena = Vec::with_capacity(size);
+        position_arena.push(root.position.clone());
+
         Self {
-            root: game,
             config,
-            node_arena: Vec::with_capacity(size * 2),
+            node_arena: node_arena,
             edge_arena: Vec::with_capacity(size * 16),
-            position_arena: Vec::with_capacity(size),
+            position_arena: position_arena,
             path: Vec::new(),
+            root: 0,
         }
+    }
+
+    fn get_child_idx(&self, edge_idx: usize) -> Option<usize> {
+        self.edge_arena[edge_idx].child_node_idx
     }
 
     pub fn select_best_edge(&self, node_idx: usize) -> Option<usize> {
         let node = &self.node_arena[node_idx];
         let position = &self.position_arena[node.get_data().chess_position_idx];
 
-        let (start, end) = node.get_data().child_edge_idx?;
-        let visit_count: u32 = self.edge_arena[start..=end].iter().map(|e| e.visits).sum();
+        let (start, end) = node.get_data().child_edge_range?;
+        let visit_count = node.get_data().visits;
 
         let calc_puct = |edge_idx: usize| -> f32 {
             let edge = &self.edge_arena[edge_idx];
             let (w, d, l) = (edge.mean_value[0], edge.mean_value[1], edge.mean_value[2]);
-            let mut value = (w - l) / (w + d + l);
+
+            let mut exploitation = w - l;
             if position.side_to_move == Color::Black {
-                value *= -1.0;
+                exploitation *= -1.0;
             }
-            let exploitation = value / visit_count as f32;
-            exploitation + self.config.c_puct * (visit_count as f32).sqrt() / (1 + edge.visits) as f32
+
+            let mut prior = edge.confidence;
+            if node_idx == self.root {
+                let mut rng = XorShift64::new(1234);
+                let noise_weight = 0.25;
+                let noise = rng.next() as f32;
+                prior = ((1.0 - noise_weight) * prior) + (prior * noise);
+            }
+
+            let exploration = prior * self.config.c_puct * (visit_count as f32).sqrt() / (1 + edge.visits) as f32;
+            exploitation + exploration
         };
 
-        let idx = (start..=end).max_by(|&x, &y| {
+        let idx = (start..end).max_by(|&x, &y| {
             let a = calc_puct(x);
             let b = calc_puct(y);
             a.total_cmp(&b)
@@ -171,49 +221,144 @@ impl<'a> Mcts<'a> {
             edge.mean_value[0] = edge.total_value[0] / edge.visits as f32;
             edge.mean_value[1] = edge.total_value[1] / edge.visits as f32;
             edge.mean_value[2] = edge.total_value[2] / edge.visits as f32;
+            self.node_arena[edge.parent_node_idx].get_data_mut().visits += 1;
         })
     }
 
-    pub fn traverse(&mut self) {
-        let mut current_edge = 0;
-        let mut current_node = 0;
-        self.path.clear();
-        while let Some(node_idx) = self.edge_arena[current_edge].child_node_idx {
-            self.path.push(current_edge);
-            current_node = node_idx;
-            current_edge = self.select_best_edge(node_idx).unwrap();
+    fn add_leaf(&mut self, edge_idx: usize) -> Option<usize> {
+        let edge = &mut self.edge_arena[edge_idx];
+        if edge.child_node_idx.is_some() {
+            return None;
         }
-        let edge = &mut self.edge_arena[current_edge];
-        let node = &self.node_arena[current_node];
-        match node {
+
+        let parent_node = &self.node_arena[edge.parent_node_idx];
+        match parent_node {
             MctsNode::PieceSelect { data } => {
-                let data = NodeData::new(node.get_data().chess_position_idx, current_edge);
-                let node = MctsNode::PieceMove { data, from_sq: edge.square };
-                self.node_arena.push(node);
-                edge.child_node_idx = Some(self.node_arena.len());
+                let new_node = MctsNode::PieceMove {
+                    data:    NodeData::new(data.chess_position_idx, edge_idx),
+                    from_sq: edge.square,
+                };
+                self.node_arena.push(new_node);
+                let node_idx = self.node_arena.len();
+                edge.child_node_idx = Some(node_idx);
+                return Some(node_idx);
             }
-            MctsNode::PieceMove { data, from_sq } => {
-                let mut position = self.position_arena[node.get_data().chess_position_idx].clone();
-                let mov = ChessMove::new(*from_sq, edge.square, None);
+            MctsNode::PieceMove { from_sq, .. } => {
+                let mut position = self.position_arena[parent_node.get_data().chess_position_idx].clone();
+                let outcome = position.check_game_state(self.config.legal);
+                let mov = ChessMove::new(*from_sq, edge.square, edge.promotion_piece);
+
                 position.make_move(&mov);
                 self.position_arena.push(position);
-                let data = NodeData::new(self.position_arena.len(), current_edge);
-                let node = MctsNode::PieceSelect { data };
-                self.node_arena.push(node);
-                edge.child_node_idx = Some(self.node_arena.len());
+
+                let mut new_node = MctsNode::PieceSelect { data: NodeData::new(self.position_arena.len(), edge_idx) };
+                if matches!(outcome, Outcome::Finished(_)) {
+                    new_node.get_data_mut().is_terminal = true;
+                    new_node.get_data_mut().value = Some(outcome.to_f32().unwrap());
+                }
+                self.node_arena.push(new_node);
+
+                let node_idx = self.node_arena.len();
+                edge.child_node_idx = Some(node_idx);
+                return Some(node_idx);
             }
+        }
+    }
+
+    pub fn node_to_expand(&self) -> Option<usize> {
+        let edge_idx = self.path.last()?;
+        let edge = &self.edge_arena[*edge_idx];
+        edge.child_node_idx
+    }
+
+    pub fn get_position(&self, node_idx: usize) -> ChessPosition {
+        self.position_arena[self.node_arena[node_idx].get_data().chess_position_idx].clone()
+    }
+
+    pub fn make_targets(&mut self) -> TrainingSample {
+        let node = &self.node_arena[0];
+        let position = &self.get_position(0);
+        let inputs = match node {
+            MctsNode::PieceSelect { .. } => NetworkInputs::from_position(position, None),
+            MctsNode::PieceMove { from_sq, .. } => NetworkInputs::from_position(position, Some(from_sq)),
+        };
+
+        let (start, end) = node.get_data().child_edge_range.unwrap();
+        let total_visits: u32 = self.edge_arena[start..end].iter().map(|e| e.visits).sum();
+        let mut target_policy = [0.0; 64];
+        self.edge_arena[start..end]
+            .iter()
+            .for_each(|e| target_policy[e.square.0 as usize] += e.visits as f32 / total_visits as f32);
+
+        let best_edge_idx =
+            (start..end).max_by(|a, b| self.edge_arena[*a].visits.cmp(&self.edge_arena[*b].visits)).unwrap();
+        let best_edge = &self.edge_arena[best_edge_idx];
+        self.root = best_edge.child_node_idx.unwrap();
+        let targets = NetworkLabels { policy: target_policy, value: best_edge.mean_value };
+        TrainingSample { inputs, targets }
+    }
+
+    pub fn traverse(&mut self) {
+        let mut current_node_idx = 0;
+        self.path.clear();
+
+        loop {
+            if let Some(edge_idx) = self.select_best_edge(current_node_idx) {
+                self.path.push(edge_idx);
+                let next_node_idx = self.edge_arena[edge_idx].child_node_idx;
+
+                if next_node_idx.is_none() {
+                    let node_idx = self.add_leaf(edge_idx).unwrap();
+                    let node = &self.node_arena[node_idx];
+                    if node.get_data().is_terminal {
+                        let value = node.get_data().value;
+                        self.backprop(value.unwrap());
+                    }
+                } else {
+                    let node = &self.node_arena[next_node_idx.unwrap()];
+                    if node.get_data().is_terminal {
+                        self.backprop(node.get_data().value.unwrap());
+                        break;
+                    }
+                    current_node_idx = next_node_idx.unwrap();
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn get_move(&self) -> Option<ChessMove> {
+        let edge = &self.edge_arena[self.select_best_edge(0)?];
+        let node = &self.node_arena[edge.parent_node_idx];
+        match node {
+            MctsNode::PieceMove { from_sq, .. } => {
+                if let Some(piece_type) = edge.promotion_piece {
+                    return Some(ChessMove::new(*from_sq, edge.square, Some(piece_type)));
+                }
+                return Some(ChessMove::new(*from_sq, edge.square, None));
+            }
+            _ => return None,
         }
     }
 }
 
-pub fn expand<B: Backend>(games: &mut [Mcts], model: ChessTransformer<B>, config: &TrainingConfig, device: &B::Device) {
-    let mut masks: Vec<[bool; 64]> = Vec::with_capacity(config.batch_size * 64);
+pub fn expand_batch<B: Backend>(
+    mctss: &mut [Mcts],
+    model: ChessTransformer<B>,
+    config: &TrainingConfig,
+    device: &B::Device,
+) {
+    let mut masks: Vec<[bool; 64]> = Vec::with_capacity(config.batch_size);
     let mut inputs: Vec<NetworkInputs> = Vec::with_capacity(config.batch_size);
-    games.iter().for_each(|game| {
+
+    // populate inputs and masks
+    mctss.iter().for_each(|game| {
         let edge_idx = game.path.last().unwrap();
         let edge = &game.edge_arena[*edge_idx];
         let node_idx = edge.child_node_idx.unwrap();
         inputs.push(game.get_network_input(node_idx));
+
         let node = &game.node_arena[node_idx];
         let position_idx = node.get_data().chess_position_idx;
         let position = &game.position_arena[position_idx];
@@ -222,37 +367,50 @@ pub fn expand<B: Backend>(games: &mut [Mcts], model: ChessTransformer<B>, config
             MctsNode::PieceMove { from_sq, .. } => masks.push(position.make_mask(config.legal, Some(*from_sq))),
         }
     });
+
+    // generate outputs
     let mask_in: Vec<bool> = masks.clone().into_iter().flatten().collect();
-    let outputs =
+    let outputs: Vec<NetworkLabels> =
         model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
 
-    games.iter_mut().zip(outputs.into_iter()).zip(masks.into_iter()).for_each(|((game, output), mask)| {
-        // fucking what the fuck is this unreadable shit
-        let edge_idx = game.path.last().unwrap().clone();
-        let start = game.edge_arena.len();
-        let edge = &mut game.edge_arena[edge_idx];
-        let uh = edge.child_node_idx.clone();
-        let node_idx = edge.child_node_idx.unwrap();
+    mctss.iter_mut().zip(outputs.into_iter()).zip(masks.into_iter()).for_each(|((game, output), mask)| {
+        let node_idx = game.node_to_expand().unwrap();
+        let position = &game.get_position(node_idx);
         let node = &mut game.node_arena[node_idx];
-        let sqs = output.as_squares();
+
+        let start = game.edge_arena.len();
+        let (policy, value) = (output.as_squares(), output.value);
         for i in 0..64 {
+            // this means only legal/pseudo legal moves are pushed
             if mask[i] == true {
-                let sq = sqs[i];
-                let edge = MctsEdge::new(sq.0, sq.1, uh.unwrap());
-                game.edge_arena.push(edge);
+                match node {
+                    MctsNode::PieceMove { from_sq, .. } => {
+                        // if move is promotion, add 4 edges, one for each promotion
+                        let mov = ChessMove::new(*from_sq, ChessSquare(i as u8), None);
+                        // expand_if_prom -> Option<[ChessMove; 4]> turns none into promotions lol
+                        if let Some(moves) = position.expand_if_prom(mov) {
+                            for mov in moves {
+                                let edge = MctsEdge::new(policy[i].0, policy[i].1 / 4.0, node_idx)
+                                    .with_prom(mov.promotion.unwrap());
+                                game.edge_arena.push(edge);
+                            }
+                        } else {
+                            let edge = MctsEdge::new(policy[i].0, policy[i].1, game.position_arena.len());
+                            game.edge_arena.push(edge);
+                        }
+                    }
+                    MctsNode::PieceSelect { .. } => {
+                        let edge = MctsEdge::new(policy[i].0, policy[i].1, node_idx);
+                        game.edge_arena.push(edge);
+                    }
+                }
             }
         }
         let end = game.edge_arena.len();
 
         // update node
-        node.get_data_mut().child_edge_idx = Some((start, end));
-
-        let position = &game.position_arena[node.get_data().chess_position_idx];
-        if let Some(value) = position.check_game_state(config.legal).to_f32() {
-            node.get_data_mut().value = Some(value);
-            node.get_data_mut().is_terminal = true;
-        } else {
-            node.get_data_mut().value = Some(output.value);
-        }
+        node.get_data_mut().child_edge_range = Some((start, end));
+        node.get_data_mut().value = Some(value);
+        game.backprop(value);
     });
 }
