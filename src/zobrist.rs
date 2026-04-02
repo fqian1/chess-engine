@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-struct XorShift64 {
+pub struct XorShift64 {
     value: u64,
 }
 
@@ -12,7 +12,8 @@ impl XorShift64 {
             XorShift64 { value: seed }
         }
     }
-    fn next(&mut self) -> u64 {
+
+    pub fn next(&mut self) -> u64 {
         let mut x = self.value;
         x ^= x << 13;
         x ^= x >> 7;
