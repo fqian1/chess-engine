@@ -208,20 +208,23 @@ impl ChessPosition {
     }
 
     pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
-        match from_sq {
-            Some(sq) => std::array::from_fn::<bool, 64, _>(|i| {
-                self.pseudolegal_moves
-                    .iter()
-                    .filter(|mov| !legal || self.is_legal(mov))
-                    .any(|mov| mov.from == sq && mov.to.0 == i as u8)
-            }),
-            None => std::array::from_fn::<bool, 64, _>(|i| {
-                self.pseudolegal_moves
-                    .iter()
-                    .filter(|mov| !legal || self.is_legal(mov))
-                    .any(|mov| mov.from.0 == i as u8)
-            }),
+        let mut mask = [false; 64];
+        if let Some(from_sq) = from_sq {
+            self.pseudolegal_moves.iter().for_each(|&mov| {
+                if self.is_legal(&mov) || !legal {
+                    if from_sq == mov.from {
+                        mask[mov.to.0 as usize] = true;
+                    }
+                }
+            });
+        } else {
+            self.pseudolegal_moves.iter().for_each(|&mov| {
+                if self.is_legal(&mov) || !legal {
+                    mask[mov.from.0 as usize] = true;
+                }
+            });
         }
+        mask
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
@@ -383,6 +386,7 @@ impl ChessPosition {
         hash
     }
 
+    // this is used by mcts, doesnt include 3 fold reptition
     pub fn check_game_state(&self, legal: bool) -> Outcome {
         // PseudoLegal and Legal Checks
         if self.halfmove_clock >= 100 {
@@ -402,20 +406,27 @@ impl ChessPosition {
         }
 
         // Legal Checks
-        // checkmate
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
-        // Safe, king must exist otherwise wouldve returned earlier
         let king_sq = king_bb.pop_lsb().unwrap();
-        let mut legal_moves = self.pseudolegal_moves.clone();
-        legal_moves.retain(|x| self.is_legal(x));
 
-        if legal_moves.is_empty() {
+        if !self.pseudolegal_moves.iter().any(|&mov| self.is_legal(&mov)) {
             if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
                 return Outcome::Finished(Some(self.side_to_move.opposite()));
             } else {
                 return Outcome::Finished(None);
             }
         }
+
+        // is this redundant
+        self.pseudolegal_moves.iter().any(|&mov| {
+            if mov.from.0 != king_sq.0 {
+                return false;
+            }
+            if legal {
+                return self.is_legal(&mov);
+            }
+            true
+        });
 
         // insufficient material
         let all_pieces = self.chessboard.all_pieces;
@@ -481,205 +492,205 @@ impl ChessPosition {
         None
     }
 
-    pub fn is_geometrically_valid(&self, mov: &ChessMove) -> bool {
-        let from_sq = mov.from;
-        let to_sq = mov.to;
-        let opponent = self.side_to_move.opposite();
-
-        let Some(from_piece) = self.chessboard.get_piece_at(from_sq) else {
-            return false;
-        };
-
-        if from_piece.color != self.side_to_move {
-            return false;
-        }
-
-        if let Some(to_piece) = self.chessboard.get_piece_at(to_sq) {
-            if to_piece.color == self.side_to_move {
-                return false;
-            }
-        }
-
-        match from_piece.piece_type {
-            PieceType::Pawn => {
-                let (direction, start_rank) = match self.side_to_move {
-                    Color::White => (1, 1),
-                    Color::Black => (-1, 6),
-                };
-
-                let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
-                let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
-
-                match self.side_to_move {
-                    Color::White => {
-                        if mov.to.rank() != 7 && mov.promotion.is_some() {
-                            return false;
-                        }
-                        if mov.to.rank() == 7
-                            && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
-                        {
-                            return false;
-                        }
-                    }
-                    Color::Black => {
-                        if mov.to.rank() != 0 && mov.promotion.is_some() {
-                            return false;
-                        }
-                        if mov.to.rank() == 0
-                            && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
-                        {
-                            return false;
-                        }
-                    }
-                }
-
-                if file_diff == 0 {
-                    if rank_diff == direction {
-                        if self.chessboard.all_pieces.is_set(to_sq) {
-                            return false;
-                        }
-                    } else if rank_diff == 2 * direction {
-                        if from_sq.rank() != start_rank {
-                            return false;
-                        }
-                        let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
-                        if self.chessboard.all_pieces.is_set(to_sq) || self.chessboard.all_pieces.is_set(mid_sq) {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-                } else if file_diff == 1 {
-                    if rank_diff != direction {
-                        return false;
-                    }
-                    let is_ep = self.en_passant.is_some_and(|sq| sq == to_sq);
-
-                    if !is_ep {
-                        let target_occupancy = match self.side_to_move {
-                            Color::White => self.chessboard.black_occupancy,
-                            Color::Black => self.chessboard.white_occupancy,
-                        };
-
-                        if !target_occupancy.is_set(to_sq) {
-                            return false;
-                        }
-                    }
-                } else {
-                    return false;
-                }
-            }
-
-            PieceType::Rook => {
-                let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-                if !rook_attacks.is_set(to_sq) {
-                    return false;
-                }
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return false;
-                }
-            }
-
-            PieceType::Bishop => {
-                let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-                if !bishop_attacks.is_set(to_sq) {
-                    return false;
-                }
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return false;
-                }
-            }
-
-            PieceType::Knight => {
-                if !ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
-                    return false;
-                }
-            }
-
-            PieceType::Queen => {
-                let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-                let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
-                    .iter()
-                    .copied()
-                    .reduce(|acc, bb| acc | bb)
-                    .unwrap_or(Bitboard::EMPTY);
-
-                let is_diag = bishop_attacks.is_set(to_sq);
-                let is_orth = rook_attacks.is_set(to_sq);
-
-                if !is_diag && !is_orth {
-                    return false;
-                }
-
-                let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if !(ray_board & self.chessboard.all_pieces).is_empty() {
-                    return false;
-                }
-            }
-
-            PieceType::King => {
-                let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
-
-                if self.chessboard.all_pieces.is_set(to_sq) {
-                    return false;
-                }
-
-                if !(self.chessboard.all_pieces & between).is_empty() {
-                    return false;
-                }
-
-                if to_sq.file() == 1 {
-                    let b_file_sq = if to_sq.rank() == 0 {
-                        ChessSquare::B1
-                    } else {
-                        ChessSquare::B8
-                    };
-                    if self.chessboard.all_pieces.is_set(b_file_sq) {
-                        return false;
-                    }
-                }
-
-                let (rights_needed, crossing_sq) = match to_sq {
-                    ChessSquare::G1 => (CastlingRights::WHITE_KINGSIDE, ChessSquare::F1),
-                    ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
-                    ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
-                    ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
-                    _ => return false,
-                };
-
-                if !self.castling_rights.has(rights_needed) {
-                    return false;
-                }
-
-                if self.chessboard.is_square_attacked(from_sq, opponent) {
-                    return false;
-                }
-                if self.chessboard.is_square_attacked(crossing_sq, opponent) {
-                    return false;
-                }
-
-                if !ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
-                    return false;
-                }
-            }
-        }
-        true
-    }
+    // pub fn is_geometrically_valid(&self, mov: &ChessMove) -> bool {
+    //     let from_sq = mov.from;
+    //     let to_sq = mov.to;
+    //     let opponent = self.side_to_move.opposite();
+    //
+    //     let Some(from_piece) = self.chessboard.get_piece_at(from_sq) else {
+    //         return false;
+    //     };
+    //
+    //     if from_piece.color != self.side_to_move {
+    //         return false;
+    //     }
+    //
+    //     if let Some(to_piece) = self.chessboard.get_piece_at(to_sq) {
+    //         if to_piece.color == self.side_to_move {
+    //             return false;
+    //         }
+    //     }
+    //
+    //     match from_piece.piece_type {
+    //         PieceType::Pawn => {
+    //             let (direction, start_rank) = match self.side_to_move {
+    //                 Color::White => (1, 1),
+    //                 Color::Black => (-1, 6),
+    //             };
+    //
+    //             let rank_diff = to_sq.rank() as i8 - from_sq.rank() as i8;
+    //             let file_diff = (to_sq.file() as i8 - from_sq.file() as i8).abs();
+    //
+    //             match self.side_to_move {
+    //                 Color::White => {
+    //                     if mov.to.rank() != 7 && mov.promotion.is_some() {
+    //                         return false;
+    //                     }
+    //                     if mov.to.rank() == 7
+    //                         && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+    //                     {
+    //                         return false;
+    //                     }
+    //                 }
+    //                 Color::Black => {
+    //                     if mov.to.rank() != 0 && mov.promotion.is_some() {
+    //                         return false;
+    //                     }
+    //                     if mov.to.rank() == 0
+    //                         && (mov.promotion.is_none() || mov.promotion.is_some_and(|x| x == PieceType::Pawn))
+    //                     {
+    //                         return false;
+    //                     }
+    //                 }
+    //             }
+    //
+    //             if file_diff == 0 {
+    //                 if rank_diff == direction {
+    //                     if self.chessboard.all_pieces.is_set(to_sq) {
+    //                         return false;
+    //                     }
+    //                 } else if rank_diff == 2 * direction {
+    //                     if from_sq.rank() != start_rank {
+    //                         return false;
+    //                     }
+    //                     let mid_sq = ChessSquare((from_sq.0 as i8 + (8 * direction)) as u8);
+    //                     if self.chessboard.all_pieces.is_set(to_sq) || self.chessboard.all_pieces.is_set(mid_sq) {
+    //                         return false;
+    //                     }
+    //                 } else {
+    //                     return false;
+    //                 }
+    //             } else if file_diff == 1 {
+    //                 if rank_diff != direction {
+    //                     return false;
+    //                 }
+    //                 let is_ep = self.en_passant.is_some_and(|sq| sq == to_sq);
+    //
+    //                 if !is_ep {
+    //                     let target_occupancy = match self.side_to_move {
+    //                         Color::White => self.chessboard.black_occupancy,
+    //                         Color::Black => self.chessboard.white_occupancy,
+    //                     };
+    //
+    //                     if !target_occupancy.is_set(to_sq) {
+    //                         return false;
+    //                     }
+    //                 }
+    //             } else {
+    //                 return false;
+    //             }
+    //         }
+    //
+    //         PieceType::Rook => {
+    //             let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //             if !rook_attacks.is_set(to_sq) {
+    //                 return false;
+    //             }
+    //             let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if !(ray_board & self.chessboard.all_pieces).is_empty() {
+    //                 return false;
+    //             }
+    //         }
+    //
+    //         PieceType::Bishop => {
+    //             let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //             if !bishop_attacks.is_set(to_sq) {
+    //                 return false;
+    //             }
+    //             let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if !(ray_board & self.chessboard.all_pieces).is_empty() {
+    //                 return false;
+    //             }
+    //         }
+    //
+    //         PieceType::Knight => {
+    //             if !ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+    //                 return false;
+    //             }
+    //         }
+    //
+    //         PieceType::Queen => {
+    //             let bishop_attacks = ChessBoard::BISHOP_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //             let rook_attacks = ChessBoard::ROOK_ATTACKS[from_sq.0 as usize]
+    //                 .iter()
+    //                 .copied()
+    //                 .reduce(|acc, bb| acc | bb)
+    //                 .unwrap_or(Bitboard::EMPTY);
+    //
+    //             let is_diag = bishop_attacks.is_set(to_sq);
+    //             let is_orth = rook_attacks.is_set(to_sq);
+    //
+    //             if !is_diag && !is_orth {
+    //                 return false;
+    //             }
+    //
+    //             let ray_board = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if !(ray_board & self.chessboard.all_pieces).is_empty() {
+    //                 return false;
+    //             }
+    //         }
+    //
+    //         PieceType::King => {
+    //             let between = ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap();
+    //
+    //             if self.chessboard.all_pieces.is_set(to_sq) {
+    //                 return false;
+    //             }
+    //
+    //             if !(self.chessboard.all_pieces & between).is_empty() {
+    //                 return false;
+    //             }
+    //
+    //             if to_sq.file() == 1 {
+    //                 let b_file_sq = if to_sq.rank() == 0 {
+    //                     ChessSquare::B1
+    //                 } else {
+    //                     ChessSquare::B8
+    //                 };
+    //                 if self.chessboard.all_pieces.is_set(b_file_sq) {
+    //                     return false;
+    //                 }
+    //             }
+    //
+    //             let (rights_needed, crossing_sq) = match to_sq {
+    //                 ChessSquare::G1 => (CastlingRights::WHITE_KINGSIDE, ChessSquare::F1),
+    //                 ChessSquare::C1 => (CastlingRights::WHITE_QUEENSIDE, ChessSquare::D1),
+    //                 ChessSquare::G8 => (CastlingRights::BLACK_KINGSIDE, ChessSquare::F8),
+    //                 ChessSquare::C8 => (CastlingRights::BLACK_QUEENSIDE, ChessSquare::D8),
+    //                 _ => return false,
+    //             };
+    //
+    //             if !self.castling_rights.has(rights_needed) {
+    //                 return false;
+    //             }
+    //
+    //             if self.chessboard.is_square_attacked(from_sq, opponent) {
+    //                 return false;
+    //             }
+    //             if self.chessboard.is_square_attacked(crossing_sq, opponent) {
+    //                 return false;
+    //             }
+    //
+    //             if !ChessBoard::KING_ATTACKS[from_sq.0 as usize].is_set(to_sq) {
+    //                 return false;
+    //             }
+    //         }
+    //     }
+    //     true
+    // }
 }
