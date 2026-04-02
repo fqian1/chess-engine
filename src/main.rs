@@ -1,6 +1,6 @@
 use burn::backend::{Autodiff, Wgpu};
-use burn::module::AutodiffModule;
-use chess_engine::data::TrainingSample;
+use burn::optim::{Adam, AdamConfig};
+use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
 use std::io;
 use std::io::Write;
@@ -24,31 +24,40 @@ fn main() {
     type MyInferenceBackend = Wgpu<f32, i32>;
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
 
-    let device = burn::backend::Wgpu::default();
     let artifact_dir = "tmp/stats";
-    let mut optimizer = config.optimizer.init();
 
-    // let size = model_size * 4;
-    // let n_heads = size;
-    // let n_layers = size;
-    // let d_model = n_heads * 64;
-    // let d_ff = 4 * d_model;
+    let device = burn::backend::wgpu::WgpuDevice::default();
 
-    let mut training_data: Vec<TrainingSample> = Vec::with_capacity(30000);
-    let mut chessgames: Vec<ChessGame> = vec![ChessGame::default(); 1024];
-    chessgames.iter_mut().for_each(|game| {
-        game.zobrist_hash = game.calculate_hash();
-        game.rule_set = chess_game::RuleSet::Legal;
-    });
+    let mcts_config = MctsConfig { num_simulations: 100, c_puct: 1.25, temperature: 0.01, legal: true };
 
-    loop {
-        let model = config.model.init::<B>(&device, true);
-        chessgames.iter_mut().for_each(|game| game.outcome = game.check_game_state());
-    }
+    let size = 8;
+    let n_heads = size;
+    let n_layers = size;
+    let d_model = n_heads * 64;
+    let d_ff = 4 * d_model;
+
+    let model_config = ChessTransformerConfig::new(d_model, n_heads, d_ff, n_layers);
+    let optimizer_config = AdamConfig::new();
+
+    let training_config = TrainingConfig {
+        model: model_config,
+        masked: true,
+        legal: true,
+        optimizer: optimizer_config,
+        num_epochs: 100,
+        batch_size: 128,
+        num_workers: 8,
+        seed: 1234,
+        learning_rate: 0.001,
+    };
+
+    let mut replay_buffer = ReplayBuffer::new(10000);
+
+    play::<MyAutodiffBackend>(&artifact_dir, &mcts_config, &training_config, &mut replay_buffer, &device);
 
     // loop {
     //     ChessGame::fen_to_ascii(&game.to_fen());
-    //     println!("{:?}'s turn.", game.side_to_move);
+    //     println!("{:?}'s turn.", game.position.side_to_move);
     //
     //     print!("Enter move (e.g., e2e4): ");
     //     io::stdout().flush().unwrap();
@@ -67,7 +76,7 @@ fn main() {
     //
     //     let input = game.uci_to_move(&input);
     //     match input {
-    //         Ok(input) => game.make_move(&input),
+    //         Ok(input) => game.position.make_move(&input),
     //         Err(e) => println!("{e}"),
     //     }
     // }

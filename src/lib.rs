@@ -24,7 +24,7 @@ pub use chess_move::ChessMove;
 pub use chess_piece::{ChessPiece, Color, PieceType};
 pub use chess_square::ChessSquare;
 pub use engine::*;
-pub use zobrist::ZobristKeys;
+pub use zobrist::{ZobristKeys, XorShift64};
 pub use model::ChessTransformer;
 pub use data::*;
 pub use chess_position::ChessPosition;
