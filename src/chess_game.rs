@@ -269,15 +269,6 @@ impl ChessGame {
     }
 
     pub fn check_game_state(&self, legal: bool) -> Outcome {
-        let (allies, enemies) = match self.position.side_to_move {
-            Color::White => (self.position.chessboard.white_occupancy, self.position.chessboard.black_occupancy),
-            Color::Black => (self.position.chessboard.black_occupancy, self.position.chessboard.white_occupancy),
-        };
-        // PseudoLegal and Legal Checks
-        if self.position.halfmove_clock >= 100 {
-            return Outcome::Finished(None);
-        }
-
         let repetition_count =
             self.game_history.iter().filter(|entry| entry.zobrist_hash == self.position.zobrist_hash).count();
 
@@ -285,79 +276,6 @@ impl ChessGame {
             return Outcome::Finished(None);
         }
 
-        if legal {
-            return Outcome::Unfinished;
-        }
-
-        // Legal Checks
-        // checkmate
-        let king_bb = self.position.chessboard.get_piece_bitboard(self.position.side_to_move, PieceType::King);
-        // Safe, king must exist otherwise wouldve returned earlier
-        let king_sq = king_bb.lsb_square().unwrap();
-        let mut sqs = ChessBoard::KING_ATTACKS[king_sq.0 as usize];
-        sqs.set(king_sq);
-        sqs = sqs & !enemies;
-        let sqs = std::iter::from_fn(|| sqs.pop_msb());
-        if sqs
-            .map(|sq| self.position.chessboard.is_square_attacked(sq, self.position.side_to_move.opposite()))
-            .all(|x| x == true)
-        {
-            return Outcome::Finished(Some(self.position.side_to_move.opposite()));
-        }
-
-        let mut legal_moves = self.position.pseudolegal_moves.clone();
-        legal_moves.retain(|x| self.position.is_legal(x));
-
-        if legal_moves.is_empty() {
-            if self.position.chessboard.is_square_attacked(king_sq, self.position.side_to_move.opposite()) {
-                return Outcome::Finished(Some(self.position.side_to_move.opposite()));
-            } else {
-                return Outcome::Finished(None);
-            }
-        }
-
-        // insufficient material
-        let all_pieces = self.position.chessboard.all_pieces;
-        let count = all_pieces.count();
-
-        if count == 2 {
-            return Outcome::Finished(None);
-        }
-        let mut white_bishops = self.position.chessboard.get_piece_bitboard(Color::White, PieceType::Bishop);
-        let white_knights = self.position.chessboard.get_piece_bitboard(Color::White, PieceType::Knight);
-        let mut black_bishops = self.position.chessboard.get_piece_bitboard(Color::Black, PieceType::Bishop);
-        let black_knights = self.position.chessboard.get_piece_bitboard(Color::Black, PieceType::Knight);
-
-        let white_minors = white_bishops | white_knights;
-        let black_minors = black_bishops | black_knights;
-
-        if count == 3 {
-            if !white_minors.is_empty() || !black_minors.is_empty() {
-                return Outcome::Finished(None);
-            }
-        }
-        if count == 4 {
-            // K + N vs K + N
-            if white_bishops.is_empty() && black_bishops.is_empty() {
-                return Outcome::Finished(None);
-            }
-
-            if black_bishops.count() == 2 {
-                if let (Some(sq1), Some(sq2)) = (black_bishops.pop_msb(), black_bishops.pop_msb()) {
-                    if sq1.colour() == sq2.colour() {
-                        return Outcome::Finished(None);
-                    }
-                }
-            }
-            if white_bishops.count() == 2 {
-                if let (Some(sq1), Some(sq2)) = (white_bishops.pop_msb(), white_bishops.pop_msb()) {
-                    if sq1.colour() == sq2.colour() {
-                        return Outcome::Finished(None);
-                    }
-                }
-            }
-        }
-
-        Outcome::Unfinished
+        self.position.check_game_state(legal)
     }
 }
