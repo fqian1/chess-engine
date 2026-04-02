@@ -3,11 +3,23 @@ name = "chess-engine"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "s"
+panic = "abort"
+strip = "symbols"
+
+[build]
+rustflags = ["-C", "target-cpu=native", "link-arg=-fuse-ld=mold"]
+
+
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [dependencies]
-burn = { version = "0.21.0-pre.1", features = ["std", "tui", "train","wgpu", "fusion", "cuda", "ndarray"], default-features = false }
+arrayvec = "0.7.6"
+burn = { version = "0.21.0-pre.1", features = ["std", "train","wgpu", "fusion" ], default-features = false }
 rand = "0.10.0"
 rayon = "1.11.0"

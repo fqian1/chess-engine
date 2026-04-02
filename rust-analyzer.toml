@@ -1,0 +1,8 @@
+[cachePriming]
+enable = false
+
+[check]
+workspace = false
+
+[checkOnSave]
+extraArgs = ["--target-dir", "target/ra-check"]
