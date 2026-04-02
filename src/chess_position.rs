@@ -1,3 +1,5 @@
+use arrayvec::ArrayVec;
+
 use crate::{
     Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome,
 };
@@ -10,12 +12,12 @@ pub struct ChessPosition {
     pub en_passant: Option<ChessSquare>,
     pub halfmove_clock: u32,
     pub zobrist_hash: u64,
-    pub pseudolegal_moves: Vec<ChessMove>,
+    pub pseudolegal_moves: ArrayVec<ChessMove, 128>,
 }
 
 impl ChessPosition {
-    pub fn generate_pseudolegal(&self) -> Vec<ChessMove> {
-        let mut moves: Vec<ChessMove> = Vec::new();
+    pub fn generate_pseudolegal(&mut self) {
+        let mut moves = ArrayVec::<ChessMove, 128>::new();
 
         let (allies, opps) = match self.side_to_move {
             Color::White => (self.chessboard.white_occupancy, self.chessboard.black_occupancy),
@@ -34,13 +36,13 @@ impl ChessPosition {
             let rank_7 = if side == Color::White { 6 } else { 1 };
             let rank_2 = if side == Color::White { 1 } else { 6 };
 
-            let add_move = |moves2: &mut Vec<ChessMove>, from: ChessSquare, to: ChessSquare| {
+            let add_move = |moves2: &mut ArrayVec<ChessMove, 128>, from: ChessSquare, to: ChessSquare| {
                 if from.rank() == rank_7 {
                     for piece in [PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
-                        moves2.push(ChessMove::new(from, to, Some(piece)));
+                        let _ = moves2.try_push(ChessMove::new(from, to, Some(piece)));
                     }
                 } else {
-                    moves2.push(ChessMove::new(from, to, None));
+                    let _ = moves2.try_push(ChessMove::new(from, to, None));
                 }
             };
 
@@ -67,7 +69,7 @@ impl ChessPosition {
                                 if cfg!(debug_assertions) {
                                     println!("Double push: {}", to_sq);
                                 }
-                                moves.push(ChessMove::new(from_sq, to_sq, None));
+                                let _ = moves.try_push(ChessMove::new(from_sq, to_sq, None));
                             }
                         }
                     }
@@ -96,7 +98,7 @@ impl ChessPosition {
             let mut to_squares = ChessBoard::KNIGHT_ATTACKS[from_sq.0 as usize] & !allies;
             while let Some(to_sq) = to_squares.pop_lsb() {
                 let mv = ChessMove::new(from_sq, to_sq, None);
-                moves.push(mv);
+                let _ = moves.try_push(mv);
             }
         }
 
@@ -128,7 +130,7 @@ impl ChessPosition {
                 };
             }
             while let Some(to_sq) = ray.pop_lsb() {
-                moves.push(ChessMove::new(from_sq, to_sq, None));
+                let _ = moves.try_push(ChessMove::new(from_sq, to_sq, None));
             }
         };
 
@@ -152,7 +154,7 @@ impl ChessPosition {
         if let Some(from_sq) = king.pop_lsb() {
             let mut bb = ChessBoard::KING_ATTACKS[from_sq.0 as usize] & !allies;
             while let Some(sq) = bb.pop_lsb() {
-                moves.push(ChessMove::new(from_sq, sq, None));
+                let _ = moves.try_push(ChessMove::new(from_sq, sq, None));
             }
             let clear = |from: ChessSquare, to: ChessSquare| -> bool {
                 let mut between =
@@ -174,13 +176,13 @@ impl ChessPosition {
                 Color::White => {
                     if self.castling_rights.has(CastlingRights::WHITE_KINGSIDE) {
                         if clear(ChessSquare::E1, ChessSquare::G1) {
-                            moves.push(ChessMove::new(ChessSquare::E1, ChessSquare::G1, None));
+                            let _ = moves.try_push(ChessMove::new(ChessSquare::E1, ChessSquare::G1, None));
                         }
                     }
                     if self.castling_rights.has(CastlingRights::WHITE_QUEENSIDE) {
                         if !self.chessboard.all_pieces.is_set(ChessSquare::B1) {
                             if clear(ChessSquare::E1, ChessSquare::C1) {
-                                moves.push(ChessMove::new(ChessSquare::E1, ChessSquare::C1, None));
+                                let _ = moves.try_push(ChessMove::new(ChessSquare::E1, ChessSquare::C1, None));
                             }
                         }
                     }
@@ -188,20 +190,21 @@ impl ChessPosition {
                 Color::Black => {
                     if self.castling_rights.has(CastlingRights::BLACK_KINGSIDE) {
                         if clear(ChessSquare::E8, ChessSquare::G8) {
-                            moves.push(ChessMove::new(ChessSquare::E8, ChessSquare::G8, None));
+                            let _ = moves.try_push(ChessMove::new(ChessSquare::E8, ChessSquare::G8, None));
                         }
                     }
                     if self.castling_rights.has(CastlingRights::BLACK_QUEENSIDE) {
                         if !self.chessboard.all_pieces.is_set(ChessSquare::B8) {
                             if clear(ChessSquare::E8, ChessSquare::C8) {
-                                moves.push(ChessMove::new(ChessSquare::E8, ChessSquare::C8, None));
+                                let _ = moves.try_push(ChessMove::new(ChessSquare::E8, ChessSquare::C8, None));
                             }
                         }
                     }
                 }
             }
         }
-        moves
+
+        self.pseudolegal_moves = moves;
     }
 
     pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
@@ -298,6 +301,7 @@ impl ChessPosition {
                 Color::Black => rights_to_remove |= CastlingRights::BLACK_KINGSIDE | CastlingRights::BLACK_QUEENSIDE,
             }
         }
+
         let get_rights = |sq: ChessSquare| -> CastlingRights {
             match sq {
                 ChessSquare::H1 => CastlingRights::WHITE_KINGSIDE,
@@ -307,11 +311,14 @@ impl ChessPosition {
                 _ => CastlingRights::empty(),
             }
         };
+
         rights_to_remove |= get_rights(mov.from);
         rights_to_remove |= get_rights(mov.to);
         self.castling_rights.remove(rights_to_remove);
 
-        // Update En Passant
+        self.chessboard.apply_move(mov, self.side_to_move, self.en_passant);
+
+        // Update En Passant after making move
         self.en_passant = None;
         if moving_piece.piece_type == PieceType::Pawn && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2 {
             let skipped_rank = (mov.from.rank() + mov.to.rank()) / 2;
@@ -324,8 +331,6 @@ impl ChessPosition {
         } else {
             self.halfmove_clock += 1;
         }
-
-        self.chessboard.apply_move(mov, self.side_to_move, self.en_passant);
 
         self.side_to_move = self.side_to_move.opposite();
 
@@ -401,7 +406,7 @@ impl ChessPosition {
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
         // Safe, king must exist otherwise wouldve returned earlier
         let king_sq = king_bb.pop_lsb().unwrap();
-        let mut legal_moves = self.generate_pseudolegal();
+        let mut legal_moves = self.pseudolegal_moves.clone();
         legal_moves.retain(|x| self.is_legal(x));
 
         if legal_moves.is_empty() {
