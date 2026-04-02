@@ -160,8 +160,8 @@ impl ChessBoard {
     pub fn is_square_attacked(&self, sq: ChessSquare, attacker_color: Color) -> bool {
         let enemy_pieces = &self.pieces[attacker_color as usize];
         let all_pieces = self.all_pieces;
-        let bishop_attacks = ChessBoard::BISHOP_ATTACKS.map(|x| x[0] | x[1] | x[2] | x[3]);
-        let rook_attacks = ChessBoard::ROOK_ATTACKS.map(|x| x[0] | x[1] | x[2] | x[3]);
+        let bishop_attacks = ChessBoard::BISHOP_ATTACKS_ALL;
+        let rook_attacks = ChessBoard::ROOK_ATTACKS_ALL;
 
         let incoming_pawn_mask = match attacker_color {
             Color::White => ChessBoard::PAWN_ATTACKS_BLACK[sq.0 as usize],
@@ -297,6 +297,18 @@ impl ChessBoard {
     pub const ROOK_ATTACKS: [[Bitboard; 4]; 64] = Self::generate_rook_direction_masks();
     // SW, SE, NE, NW
     pub const BISHOP_ATTACKS: [[Bitboard; 4]; 64] = Self::generate_bishop_direction_masks();
+
+    const fn combine_masks(input: [[Bitboard; 4]; 64]) -> [Bitboard; 64] {
+        let mut output = [Bitboard(0); 64];
+        let mut i = 0;
+        while i < 64 {
+            output[i] = Bitboard(input[i][0].0 | input[i][1].0 | input[i][2].0 | input[i][3].0);
+            i += 1;
+        }
+        output
+    }
+    pub const BISHOP_ATTACKS_ALL: [Bitboard; 64] = Self::combine_masks(Self::BISHOP_ATTACKS);
+    pub const ROOK_ATTACKS_ALL: [Bitboard; 64] = Self::combine_masks(Self::ROOK_ATTACKS);
 
     pub const BETWEEN: [[Option<Bitboard>; 64]; 64] = Self::generate_between();
 
