@@ -1,3 +1,5 @@
+use arrayvec::ArrayVec;
+
 use super::{CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessPosition, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,17 +103,12 @@ impl ChessGame {
             en_passant,
             halfmove_clock,
             zobrist_hash: 0,
-            pseudolegal_moves: Vec::new()
+            pseudolegal_moves: ArrayVec::<ChessMove, 128>::new(),
         };
 
-        position.pseudolegal_moves = position.generate_pseudolegal();
+        position.generate_pseudolegal();
 
-        ChessGame {
-            position,
-            fullmove_counter,
-            game_history: Vec::new(),
-            outcome: Outcome::Unfinished,
-        }
+        ChessGame { position, fullmove_counter, game_history: Vec::new(), outcome: Outcome::Unfinished }
     }
 
     pub fn to_fen(&self) -> String {
@@ -228,7 +225,7 @@ impl ChessGame {
         self.position.make_move(mov);
 
         self.game_history.push(self.position.clone());
-        self.position.pseudolegal_moves = self.position.generate_pseudolegal();
+        self.position.generate_pseudolegal();
     }
 
     pub fn unmake_move(&mut self) {
