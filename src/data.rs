@@ -73,7 +73,7 @@ impl NetworkInputs {
         for i in 0..4 {
             meta[i] = (castling_rights.0 >> i & 1).into();
         }
-        meta[4] = position.halfmove_clock as f32 / 50.0;
+        meta[4] = position.halfmove_clock as f32 / 100.0;
 
         Self { boards: data, meta }
     }
@@ -148,7 +148,7 @@ impl ReplayBuffer {
         Self { capacity, pointer: 0, buffer: Vec::with_capacity(capacity) }
     }
 
-    pub fn push(&mut self, sample: &TrainingSample) {
+    pub fn push(&mut self, sample: TrainingSample) {
         if self.buffer.len() < self.capacity {
             self.buffer.push(sample.clone());
         } else {
