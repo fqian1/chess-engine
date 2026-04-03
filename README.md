@@ -43,8 +43,8 @@ B. Logit Masking vs. Punishment (Mechanics "Grokking")
 - Outputs: Policy head (64-square distribution: [f32; 64]) + Value head (W/D/L buckets: [f32; 3]).
 - Execution Flow:
    - Pass 1: Select origin square (piece to move).
-   - Pass 2: Select destination square (feed Pass 1 output back into input). (Promotions handled client side in the MCTS).
-- MCTS Implications: Doubles tree depth, but reduces branching factor and model complexity.
+   - Pass 2: Select destination square (feed Pass 1 output back into input). (Promotions rolled out automatically by Mcts).
+- MCTS Implications: Doubles tree depth, but reduces model action space.
 - Both heads use softmax activation, kl divergence loss.
 
 3. Endgame Table Base Injection Scheduling

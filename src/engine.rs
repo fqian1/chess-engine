@@ -1,10 +1,13 @@
 use burn::{
     Tensor,
     config::Config,
+    module::Module,
     optim::{Adam, AdamConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
     prelude::Backend,
+    record::{FullPrecisionSettings, NamedMpkFileRecorder},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
+use log::info;
 use rand::{SeedableRng, rngs::SmallRng};
 
 use crate::{
@@ -84,8 +87,14 @@ pub fn inputs_to_tensor<B: Backend>(buffer: &Vec<NetworkInputs>, device: &B::Dev
         metas.extend_from_slice(&item.meta);
     }
 
-    let t1 = Tensor::<B, 3>::from_floats(boards.as_slice(), device).reshape([n, 64, 14]);
-    let t2 = Tensor::<B, 2>::from_floats(metas.as_slice(), device).reshape([n, 5]);
+    let shape = [n, 64, 14];
+    let board_data = TensorData::new(boards, shape);
+    let t1 = Tensor::from_data(board_data, device);
+
+    let shape = [n, 5];
+    let meta_data = TensorData::new(metas, shape);
+    let t2 = Tensor::from_data(meta_data, device);
+
     (t1, t2)
 }
 
@@ -93,51 +102,59 @@ pub fn play<B: AutodiffBackend>(
     artifact_dir: &str,
     mcts_config: &MctsConfig,
     training_config: &TrainingConfig,
-    replay_buffer: &mut ReplayBuffer,
     device: &B::Device,
 ) {
+    info!("play: --- Start ---");
     create_artifact_dir(artifact_dir);
-
     B::seed(device, training_config.seed);
 
-    let mut model: ChessTransformer<B> = training_config.model.init(device);
+    let model: ChessTransformer<B> = training_config.model.init(device);
+    let mut replay_buffer = ReplayBuffer::new(10000);
     let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
-
     let mut games = vec![ChessGame::default(); training_config.batch_size];
-
+    let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(&game, 1000, *mcts_config)).collect();
     let mut rng = SmallRng::seed_from_u64(training_config.seed);
+    let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
 
     loop {
-        games.iter_mut().for_each(|game| match game.check_game_state(training_config.legal) {
-            Outcome::Finished(_) => *game = ChessGame::default(),
-            Outcome::Unfinished => (),
-        });
+        for _ in 0..training_config.num_epochs {
+            games.iter_mut().for_each(|game| {
+                if let Outcome::Finished(_) = game.check_game_state(training_config.legal) {
+                    info!("play: Gameover detected, restarting...");
+                    *game = ChessGame::default();
+                }
+            });
 
-        let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(&game, 1000, *mcts_config)).collect();
-
-        // just play 50 moves or something
-        for _ in 0..50 {
             // mcts roll out
-            for _ in 0..mcts_config.num_simulations {
+            info!("play: Start mcts simnulations");
+            for count in 0..mcts_config.num_simulations {
+                info!("play: simulation: {}", count);
                 mctss.iter_mut().for_each(|e| {
                     e.traverse();
                 });
                 expand_batch(&mut mctss[..], model.clone(), training_config, device);
             }
+            info!("play: End mcts simulations");
 
             // get best move and play it
             mctss.iter_mut().zip(games.iter_mut()).for_each(|(mcts, game)| {
                 let sample = mcts.make_targets();
                 replay_buffer.push(sample);
                 if let Some(mov) = mcts.get_move() {
+                    info!("play: Best move: {}", &mov.to_uci());
                     game.make_move(&mov);
                 }
             });
         }
 
-        train(&model, &mut optimizer, &training_config, &replay_buffer, device, &mut rng);
+        info!("play: Start Training");
+        for epoch in 0..training_config.num_epochs {
+            info!("play: epoch: {}", epoch);
+            train(&model, &mut optimizer, &training_config, &replay_buffer, device, &mut rng);
+        }
 
-        // make snapshot of model
+        info!("play: Saving model at {}", artifact_dir);
+        let _ = model.clone().save_file(artifact_dir, &recorder);
     }
 }
 

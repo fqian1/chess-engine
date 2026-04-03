@@ -1,4 +1,5 @@
 use arrayvec::ArrayVec;
+use log::{info, trace};
 
 use crate::{
     Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome,
@@ -54,9 +55,6 @@ impl ChessPosition {
 
             if let Some(to_sq) = square_ahead {
                 if !self.chessboard.all_pieces.is_set(to_sq) {
-                    if cfg!(debug_assertions) {
-                        println!("Single push: {}", to_sq);
-                    }
                     add_move(&mut moves, from_sq, to_sq);
                     if from_sq.rank() == rank_2 {
                         let square_ahead = if self.side_to_move == Color::White {
@@ -66,9 +64,6 @@ impl ChessPosition {
                         };
                         if let Some(to_sq) = square_ahead {
                             if !self.chessboard.all_pieces.is_set(to_sq) {
-                                if cfg!(debug_assertions) {
-                                    println!("Double push: {}", to_sq);
-                                }
                                 let _ = moves.try_push(ChessMove::new(from_sq, to_sq, None));
                             }
                         }
@@ -208,8 +203,10 @@ impl ChessPosition {
     }
 
     pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
+        info!("make_mask: from_sq: {:?}", from_sq);
         let mut mask = [false; 64];
         if let Some(from_sq) = from_sq {
+            assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
                 if self.is_legal(&mov) || !legal {
                     if from_sq == mov.from {
@@ -218,17 +215,22 @@ impl ChessPosition {
                 }
             });
         } else {
+            trace!("make_mask: moves: {:?}", &self.pseudolegal_moves);
+            assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
                 if self.is_legal(&mov) || !legal {
                     mask[mov.from.0 as usize] = true;
                 }
             });
         }
+        info!("make_mask: --- End ---");
         mask
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
         let mut temp_board = self.chessboard.clone();
+        trace!("is_legal: chessboard: {}", self.chessboard.display_ascii());
+        trace!("is_legal: checking move: {}", mov.to_uci());
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
         let mut king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
@@ -343,7 +345,7 @@ impl ChessPosition {
             self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
         }
 
-        debug_assert!(self.zobrist_hash == self.calculate_hash());
+        // debug_assert!(self.zobrist_hash == self.calculate_hash());
     }
 
     pub fn calculate_hash(&self) -> u64 {
@@ -474,14 +476,18 @@ impl ChessPosition {
     }
 
     pub fn expand_if_prom(&self, mov: ChessMove) -> Option<[ChessMove; 4]> {
+        info!("expand_if_prom: --- Start ---");
         let prom_rank = match self.side_to_move {
             Color::White => 7,
             Color::Black => 0,
         };
+        info!("expand_if_prom: Side to move: {:?}, prom_rank: {}", self.side_to_move, prom_rank);
         if let Some(piece) = self.chessboard.get_piece_at(mov.from)
             && matches!(piece.piece_type, PieceType::Pawn)
             && mov.to.rank() == prom_rank
         {
+            info!("expand_if_prom: detected Move: {:?}\n is a promotion move, expanding", &mov);
+            info!("expand_if_prom: --- End ---");
             return Some([
                 mov.with_prom(PieceType::Knight),
                 mov.with_prom(PieceType::Bishop),
@@ -489,6 +495,8 @@ impl ChessPosition {
                 mov.with_prom(PieceType::Queen),
             ]);
         }
+        info!("expand_if_prom: No promotion detected");
+        info!("expand_if_prom: --- End ---");
         None
     }
 

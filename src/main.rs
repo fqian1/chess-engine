@@ -1,7 +1,10 @@
+#![recursion_limit = "256"]
+
 use burn::backend::{Autodiff, Wgpu};
 use burn::optim::{Adam, AdamConfig};
 use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
+use env_logger::Builder;
 use std::io;
 use std::io::Write;
 
@@ -21,6 +24,10 @@ pub fn display_moves(moves: &Vec<ChessMove>) {
 }
 
 fn main() {
+    Builder::new()
+        .filter_level(log::LevelFilter::Info)
+        .init();
+
     type MyInferenceBackend = Wgpu<f32, i32>;
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
 
@@ -45,15 +52,13 @@ fn main() {
         legal: true,
         optimizer: optimizer_config,
         num_epochs: 100,
-        batch_size: 128,
+        batch_size: 1,
         num_workers: 8,
         seed: 1234,
         learning_rate: 0.001,
     };
 
-    let mut replay_buffer = ReplayBuffer::new(10000);
-
-    play::<MyAutodiffBackend>(&artifact_dir, &mcts_config, &training_config, &mut replay_buffer, &device);
+    play::<MyAutodiffBackend>(&artifact_dir, &mcts_config, &training_config, &device);
 
     // loop {
     //     ChessGame::fen_to_ascii(&game.to_fen());
