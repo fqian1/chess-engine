@@ -23,6 +23,7 @@ in
             xorg.libXrandr
           ]
       }"
+      alias dbg='./debug.sh'
       export LD_LIBRARY_PATH
         echo "Rust nightly shell loaded"
         rustc --version
