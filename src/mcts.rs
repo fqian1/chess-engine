@@ -33,6 +33,28 @@ pub enum MctsNode {
     PieceMove { data: NodeData, from_sq: ChessSquare },
 }
 
+impl fmt::Display for MctsNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MctsNode::PieceSelect { data } => write!(
+                f,
+                "Select: position_idx: {}, edges: {:?}, value: {:?}, terminal: {}, visits: {}",
+                data.chess_position_idx, data.child_edge_range, data.value, data.is_terminal, data.visits
+            ),
+            MctsNode::PieceMove { data, from_sq } => write!(
+                f,
+                "Select: from: {} position_idx: {}, edges: {:?}, value: {:?}, terminal: {}, visits: {}",
+                from_sq.to_name(),
+                data.chess_position_idx,
+                data.child_edge_range,
+                data.value,
+                data.is_terminal,
+                data.visits
+            ),
+        }
+    }
+}
+
 impl Default for MctsNode {
     fn default() -> Self {
         MctsNode::PieceSelect { data: NodeData::default() }
@@ -124,7 +146,7 @@ impl Mcts {
         let mut position_arena = Vec::with_capacity(size);
         position_arena.push(root.position.clone());
 
-        Self { config, node_arena: node_arena, edge_arena: Vec::with_capacity(size * 16), position_arena: position_arena, path: Vec::new(), root: 0 }
+        Self { config, node_arena: node_arena, edge_arena: Vec::with_capacity(size * 16), position_arena: position_arena, path: None, root: 0 }
     }
 
     fn get_child_idx(&self, edge_idx: usize) -> Option<usize> {
@@ -149,7 +171,10 @@ impl Mcts {
 
             let mut prior = edge.confidence;
             if node_idx == self.root {
-                let mut rng = XorShift64::new(1234);
+                // TODO: u know what to do.
+                let mut buffer = Vec::new();
+                let _ = std::fs::File::open("/dev/random").unwrap().take(1).read_to_end(&mut buffer);
+                let mut rng = XorShift64::new(buffer[0] as u64);
                 let noise_weight = 0.25;
                 let noise = rng.next() as f32;
                 prior = ((1.0 - noise_weight) * prior) + (prior * noise);
@@ -231,20 +256,17 @@ impl Mcts {
 
                 let node_idx = self.node_arena.len() - 1;
                 edge.child_node_idx = Some(node_idx);
-                info!("add_leaf: MctsNode::PieceSelect added, Idx: {}", node_idx);
-                info!("add_leaf: End");
                 return Some(node_idx);
             }
         }
     }
 
-    pub fn node_to_expand(&self) -> usize {
-        if let Some(idx) = self.path.last() {
-            if let Some(child_idx) = &self.edge_arena[*idx].child_node_idx {
-                return *child_idx;
-            }
+    pub fn node_to_expand(&self) -> Option<usize> {
+        let path = self.path.as_ref()?;
+        if let Some(idx) = path.last() {
+            return self.edge_arena[*idx].child_node_idx;
         }
-        return 0;
+        Some(0)
     }
 
     pub fn get_position(&self, node_idx: usize) -> ChessPosition {
@@ -267,69 +289,62 @@ impl Mcts {
 
         let best_edge_idx = (start..end).max_by(|a, b| self.edge_arena[*a].visits.cmp(&self.edge_arena[*b].visits)).unwrap();
         let best_edge = &self.edge_arena[best_edge_idx];
-        self.root = best_edge.child_node_idx.unwrap();
         let targets = NetworkLabels { policy: target_policy, value: best_edge.mean_value };
-        info!("make_targets: End");
         TrainingSample { inputs, targets }
     }
 
     pub fn traverse(&mut self) {
-        info!("traverse: Start");
-
-        let mut current_node_idx = 0;
-        self.path.clear();
+        let mut current_node_idx = self.root;
+        self.path.get_or_insert_with(Vec::new).clear();
 
         loop {
-            debug!("traverse: Path Length: {}", self.path.len());
-
-            // If current node is expanded, push edge
-            if let Some(edge_idx) = self.select_best_edge(current_node_idx) {
-                info!("traverse: Found edge ({}) for node: {}", edge_idx, current_node_idx);
-                self.path.push(edge_idx);
-                let next_node_idx = self.edge_arena[edge_idx].child_node_idx;
-
-                if let Some(next_node_idx) = next_node_idx {
-                    // If edge has child node, check if terminal
-                    info!("traverse: Edge has leaf node. Moving from node idx: {} to {}", current_node_idx, next_node_idx);
-                    let node = &self.node_arena[next_node_idx];
-                    if node.get_data().is_terminal {
-                        info!("traverse: Node is terminal, adding edge to path and breaking");
-                        self.path.push(edge_idx);
-                        self.backprop(node.get_data().value.unwrap());
-                        info!("traverse: End");
-                        break;
-                    }
-                    info!("traverse: Node found at idx: {}", next_node_idx);
-                    current_node_idx = next_node_idx;
-                } else {
-                    info!("traverse: Edge has no leaf node. Creating...");
-                    let node_idx = self.add_leaf(edge_idx).unwrap();
-                    let node = &self.node_arena[node_idx];
-                    if node.get_data().is_terminal {
-                        let value = node.get_data().value;
-                        info!("traverse: Node is terminal, outcome: {:?}. Backpropogating...", &value.unwrap());
-                        info!("traverse: End");
-                        self.backprop(value.unwrap());
-                        break;
-                    }
-                }
-            // If current node not expanded, path is complete.
-            } else {
-                // redundant check?
+            let Some(child_edge_idx) = self.select_best_edge(current_node_idx) else {
+                // current node not expanded or is terminal
                 let node = &self.node_arena[current_node_idx];
                 if node.get_data().is_terminal {
-                    self.backprop(node.get_data().value.unwrap());
-                    self.path.clear();
+                    let value = node.get_data().value.expect("Terminal node missing value");
+                    self.backprop(value);
+                    self.path = None;
+                    break;
                 }
-                info!("traverse: No edges found for node: {}", current_node_idx);
-                info!("traverse: End");
+                break;
+            };
+
+            let path = self.path.as_mut().unwrap();
+            path.push(child_edge_idx);
+
+            let next_edge = &self.edge_arena[child_edge_idx];
+
+            // if edge has child, move to it, else make it
+            if let Some(next_node_idx) = next_edge.child_node_idx {
+                current_node_idx = next_node_idx;
+            } else {
+                _ = self.add_leaf(child_edge_idx).expect("Node already expanded");
                 break;
             }
         }
     }
 
-    pub fn get_move(&self) -> Option<ChessMove> {
-        let edge = &self.edge_arena[self.select_best_edge(0)?];
+    pub fn get_mask(&self, node_idx: usize) -> [bool; 64] {
+        let node = &self.node_arena[node_idx];
+        if let Some(edge_idx) = node.get_data().parent_edge_idx {
+            match node {
+                MctsNode::PieceSelect { data } => self.position_arena[node.get_data().chess_position_idx].make_mask(self.config.legal, None),
+                MctsNode::PieceMove { data, from_sq } => {
+                    self.position_arena[node.get_data().chess_position_idx].make_mask(self.config.legal, Some(*from_sq))
+                }
+            }
+        } else {
+            self.position_arena[0].make_mask(self.config.legal, None)
+        }
+    }
+
+    pub fn get_move(&mut self) -> Option<ChessMove> {
+        info!("creating move from: {}", self.root);
+        let edge_idx = self.select_best_edge(self.root).expect("root node not expanded");
+        let edge = &self.edge_arena[edge_idx];
+
+        self.root = edge.child_node_idx.expect("best edge doesnt have child");
         let node = &self.node_arena[edge.parent_node_idx];
         match node {
             MctsNode::PieceMove { from_sq, .. } => {
@@ -371,81 +386,68 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
         let position = &game.position_arena[position_idx];
         match node {
             MctsNode::PieceSelect { .. } => {
-                info!("expand_batch: generating select mask for position idx: {}", position_idx);
-                info!("expand_batch: displaying chessboard for node\n{}", position.chessboard.display_ascii());
                 let mask = position.make_mask(config.legal, None);
-                info!("expand_batch: displaying mask:\n{}", print_mask(&mask));
+                info!("{:?}", &node);
+                info!("\n{}\n{}", position, print_mask(&mask));
+                assert!(mask.iter().any(|&e| e == true) == true);
                 masks.push(mask);
             }
             MctsNode::PieceMove { from_sq, .. } => {
-                info!("expand_batch: generating move mask for position idx: {}", position_idx);
-                masks.push(position.make_mask(config.legal, Some(*from_sq)));
+                let mask = position.make_mask(config.legal, Some(*from_sq));
+                info!("{}", &node);
+                info!("\n{}\n{}", position, print_mask(&mask));
+                assert!(mask.iter().any(|&e| e == true) == true);
+                masks.push(mask);
             }
         }
     });
-
-    debug!("expand_batch: Mask length: {:?}", &masks[0].len());
-    debug!("expand_batch: Input length: {:?}", &inputs.len());
-    assert_eq!(&inputs.len(), &config.batch_size, "ERROR: Batch size != Network Inputs");
 
     // generate outputs
     let mut mask_in: Vec<bool> = vec![false; config.batch_size * 64];
     masks.iter().enumerate().for_each(|(i, mask)| mask_in[(i * 64)..(i * 64 + 64)].copy_from_slice(mask));
 
-    info!("expand batch: Running model inference");
     let outputs: Vec<NetworkLabels> = model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
-    info!("expand batch: Inference done");
-
-    debug!("expand_batch: Policy length: {:?}", &outputs[0].policy.len());
-    debug!("expand_batch: value: {:?}", &outputs[0].value);
 
     mctss.iter_mut().zip(outputs.into_iter()).zip(masks.into_iter()).for_each(|((game, output), mask)| {
-        let node_idx = game.node_to_expand();
+        let node_idx = game.node_to_expand().expect("path is None");
         let position = &game.get_position(node_idx);
-        let node = &mut game.node_arena[node_idx];
-
         let start = game.edge_arena.len();
         let (policy, value) = (output.as_squares(), output.value);
-        info!("expand_batch: Adding edges");
-        info!("{}", position);
-        info!("{}", print_mask(&mask));
-        assert!(mask.iter().any(|&e| e == true) == true, "mask is empty!! wtf?!");
-        for i in 0..64 {
-            // this means only legal/pseudo legal moves are pushed
-            if mask[i] == true {
-                match node {
-                    MctsNode::PieceMove { from_sq, .. } => {
-                        // if move is promotion, add 4 edges, one for each promotion
-                        let mov = ChessMove::new(*from_sq, ChessSquare(i as u8), None);
-                        // expand_if_prom -> Option<[ChessMove; 4]> turns none into promotions lol
+        let node_to_expand = &mut game.node_arena[node_idx];
+
+        mask.iter().zip(policy.iter()).for_each(|(mask, output)| {
+            let (sq, score) = (output.0, output.1);
+
+            if *mask {
+                match node_to_expand {
+                    MctsNode::PieceMove { data, from_sq } => {
+                        let mov = ChessMove::new(*from_sq, sq, None);
+                        info!("expand: adding edge from: from_sq {}", from_sq.to_name());
                         if let Some(moves) = position.expand_if_prom(mov) {
                             for mov in moves {
-                                info!("expand_batch: Adding promotion edge to MctsNode::PieceMove: {}", &node_idx);
-                                let edge = MctsEdge::new(policy[i].0, policy[i].1 / 4.0, node_idx).with_prom(mov.promotion.unwrap());
+                                let edge = MctsEdge::new(sq, score / 4.0, node_idx).with_prom(mov.promotion.unwrap());
                                 game.edge_arena.push(edge);
                             }
                         } else {
-                            info!("expand_batch: Adding edge to MctsNode::PieceMove: {}", &node_idx);
-                            let edge = MctsEdge::new(policy[i].0, policy[i].1, game.position_arena.len());
+                            let edge = MctsEdge::new(sq, score, node_idx);
                             game.edge_arena.push(edge);
                         }
                     }
-                    MctsNode::PieceSelect { .. } => {
-                        info!("expand_batch: Adding edge to MctsNode::PieceSelect: {}", &node_idx);
-                        let edge = MctsEdge::new(policy[i].0, policy[i].1, node_idx);
+                    MctsNode::PieceSelect { data } => {
+                        info!("expand: adding edge for sq: {}", sq.to_name());
+                        let edge = MctsEdge::new(sq, score, node_idx);
                         game.edge_arena.push(edge);
                     }
                 }
             }
-        }
-        let end = game.edge_arena.len() - 1;
-        info!("expand_batch: Added {} edges to Node idx: {}, at ({}, {})", end - start, node_idx, start, end);
+        });
+        let end = game.edge_arena.len();
+        info!("added {} edges", end - start);
 
         // update node
-        node.get_data_mut().child_edge_range = Some((start, end));
-        node.get_data_mut().value = Some(value);
-        info!("expand_batch: Starting backprop with value {:?}", &value);
+        node_to_expand.get_data_mut().child_edge_range = Some((start, end));
+        node_to_expand.get_data_mut().value = Some(value);
         game.backprop(value);
-        info!("expand_batch: Finished expanding");
+        game.path = None;
     });
 }

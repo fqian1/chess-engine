@@ -110,52 +110,53 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
     let mut rng = SmallRng::seed_from_u64(training_config.seed);
     let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
 
+    let mut iterations = 0;
     loop {
+        info!("Starting Self play - Train loop: cycle {}", iterations);
+
         for _ in 0..training_config.num_epochs {
             games.iter_mut().zip(mctss.iter_mut()).for_each(|(game, mcts)| {
                 if let Outcome::Finished(_) = game.check_game_state(training_config.legal) {
-                    info!("play: Gameover detected, restarting...");
+                    info!("Game over detected, Starting new game");
                     *game = ChessGame::default();
                     *mcts = Mcts::from_game(&game, 1000, *mcts_config);
                 }
             });
 
-            // mcts roll out
-            info!("play: Start mcts simulations");
             for count in 0..mcts_config.num_simulations {
-                info!("play: simulation number: {}", count);
                 mctss.iter_mut().for_each(|e| {
-                    // keep traversing while path is empty (path clears if traverses to terminal
-                    // node, dont want to expand terminal node)
-                    // edge arena empty only when no nodes expanded, so if path is empty and edge
-                    // arena not empty keep traversing otherwise just expand the first node
-                    while e.path.is_empty() && !e.edge_arena.is_empty() {
+                    while e.path.is_none() {
                         e.traverse();
                     }
                 });
                 expand_batch(&mut mctss[..], model.clone(), training_config, device);
             }
-            info!("play: End mcts simulations");
+            info!("Mcts done simulating");
 
             // get best move and play it
             mctss.iter_mut().zip(games.iter_mut()).for_each(|(mcts, game)| {
                 let sample = mcts.make_targets();
                 replay_buffer.push(sample);
                 if let Some(mov) = mcts.get_move() {
-                    info!("play: Best move: {}", &mov.to_uci());
                     game.make_move(&mov);
+                    info!("\n{}", game.position);
+                    info!("Selected move: {}", &mov.to_uci());
+                } else {
+                    info!("\n{}", game.position);
+                    info!("No move to play");
                 }
             });
         }
 
-        info!("play: Start Training");
         for epoch in 0..training_config.num_epochs {
-            info!("play: epoch: {}", epoch);
+            info!("Training model: epoch {}", epoch);
             train(&model, &mut optimizer, &training_config, &replay_buffer, device, &mut rng);
         }
 
-        info!("play: Saving model at {}", artifact_dir);
+        info!("Saving model snapshot at: {}", &artifact_dir);
         let _ = model.clone().save_file(artifact_dir, &recorder);
+
+        iterations += 1;
     }
 }
 
