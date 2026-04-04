@@ -1,5 +1,5 @@
-max_width = 120
-single_line_if_else_max_width = 60
+max_width = 150
+single_line_if_else_max_width = 80
 single_line_let_else_max_width = 80
 use_small_heuristics = "Max"
 struct_field_align_threshold = 5
