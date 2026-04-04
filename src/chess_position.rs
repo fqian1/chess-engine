@@ -27,7 +27,6 @@ impl fmt::Display for ChessPosition {
 
 impl ChessPosition {
     pub fn generate_pseudolegal(&mut self) {
-        info!("generate_pseudolegal: Start");
         let mut moves = ArrayVec::<ChessMove, 128>::new();
 
         let (allies, opps) = match self.side_to_move {
@@ -213,7 +212,6 @@ impl ChessPosition {
     }
 
     pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
-        info!("make_mask: from_sq: {:?}, side to move: {}", from_sq.map(|sq| sq.to_name()), self.side_to_move);
         let mut mask = [false; 64];
         if let Some(from_sq) = from_sq {
             assert!(!self.pseudolegal_moves.is_empty());
@@ -225,16 +223,13 @@ impl ChessPosition {
                 }
             });
         } else {
-            info!("make_mask: moves: {:?}", &self.pseudolegal_moves);
             assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
-                info!("{}", self);
                 if self.is_legal(&mov) || !legal {
                     mask[mov.from.0 as usize] = true;
                 }
             });
         }
-        info!("make_mask: End");
         mask
     }
 
@@ -490,18 +485,14 @@ impl ChessPosition {
     }
 
     pub fn expand_if_prom(&self, mov: ChessMove) -> Option<[ChessMove; 4]> {
-        info!("expand_if_prom: Start");
         let prom_rank = match self.side_to_move {
             Color::White => 7,
             Color::Black => 0,
         };
-        info!("expand_if_prom: Side to move: {:?}, prom_rank: {}", self.side_to_move, prom_rank);
         if let Some(piece) = self.chessboard.get_piece_at(mov.from)
             && matches!(piece.piece_type, PieceType::Pawn)
             && mov.to.rank() == prom_rank
         {
-            info!("expand_if_prom: detected Move: {:?}\n is a promotion move, expanding", &mov);
-            info!("expand_if_prom: End");
             return Some([
                 mov.with_prom(PieceType::Knight),
                 mov.with_prom(PieceType::Bishop),
@@ -509,8 +500,6 @@ impl ChessPosition {
                 mov.with_prom(PieceType::Queen),
             ]);
         }
-        info!("expand_if_prom: No promotion detected");
-        info!("expand_if_prom: End");
         None
     }
 

@@ -1,12 +1,10 @@
 #![recursion_limit = "256"]
 
 use burn::backend::{Autodiff, Wgpu};
-use burn::optim::{Adam, AdamConfig};
+use burn::optim::AdamConfig;
 use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
 use env_logger::Builder;
-use std::io;
-use std::io::Write;
 
 pub struct TrainingMetrics {
     pub epoch: u32,
@@ -52,7 +50,7 @@ fn main() {
         legal: true,
         optimizer: optimizer_config,
         num_epochs: 100,
-        batch_size: 1,
+        batch_size: 100,
         num_workers: 8,
         seed: 1234,
         learning_rate: 0.001,

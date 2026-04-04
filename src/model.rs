@@ -71,7 +71,7 @@ impl<B: Backend> InferenceStep for ChessTransformer<B> {
 impl<B: Backend> ChessTransformer<B> {
     // this is just straight logits no softmax yet
     pub fn forward(&self, board: Tensor<B, 3>, meta: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let [batch_size, seq_len, _] = board.dims();
+        let [batch_size, _seq_len, _] = board.dims();
 
         // batchsize x 64 x d_model
         let mut x = self.piece_encoder.forward(board);

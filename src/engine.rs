@@ -98,13 +98,7 @@ pub fn inputs_to_tensor<B: Backend>(buffer: &Vec<NetworkInputs>, device: &B::Dev
     (t1, t2)
 }
 
-pub fn play<B: AutodiffBackend>(
-    artifact_dir: &str,
-    mcts_config: &MctsConfig,
-    training_config: &TrainingConfig,
-    device: &B::Device,
-) {
-    info!("play: Start");
+pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, training_config: &TrainingConfig, device: &B::Device) {
     create_artifact_dir(artifact_dir);
     B::seed(device, training_config.seed);
 

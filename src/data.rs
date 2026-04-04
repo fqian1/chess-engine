@@ -1,5 +1,5 @@
 use burn::{
-    backend, data::dataloader::batcher::Batcher, tensor::{Tensor, backend::Backend}
+    data::dataloader::batcher::Batcher, tensor::{Tensor, backend::Backend}
 };
 use rand::{rngs::SmallRng, seq::IndexedRandom};
 

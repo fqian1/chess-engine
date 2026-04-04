@@ -1,14 +1,16 @@
-use chess_engine::{self, ChessGame, ChessMove};
+use chess_engine::{self, ChessGame, ChessMove, ChessSquare, Color};
 use log::{debug, info};
 
 #[test]
 fn move_generator_start_position() {
     env_logger::init();
-    let chess_game = ChessGame::default();
-    chess_game.position.pseudolegal_moves.iter().for_each(|mov| {
-        info!("{:?}", mov);
-    });
-    // println!("{}", chess_game.chessboard.display_ascii());
+    let mut chess_game = ChessGame::default();
+    chess_game.make_move(&ChessMove::new(
+        ChessSquare::from_name("a2").unwrap(),
+        ChessSquare::from_name("a3").unwrap(),
+        None,
+    ));
+    println!("{}", chess_game.position);
 
     assert_eq!(20, chess_game.position.pseudolegal_moves.iter().count())
 }

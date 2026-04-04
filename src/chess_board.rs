@@ -1,4 +1,4 @@
-use log::{info, trace};
+use log::trace;
 
 use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
