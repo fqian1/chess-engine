@@ -1,3 +1,5 @@
+use core::fmt;
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(usize)]
 pub enum Color {
@@ -26,6 +28,15 @@ impl Color {
         match self {
             Color::White => 'w',
             Color::Black => 'b',
+        }
+    }
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut  fmt::Formatter) -> fmt::Result {
+        match self {
+            Color::White => write!(f, "White"),
+            Color::Black => write!(f, "Black"),
         }
     }
 }

@@ -104,7 +104,7 @@ pub fn play<B: AutodiffBackend>(
     training_config: &TrainingConfig,
     device: &B::Device,
 ) {
-    info!("play: --- Start ---");
+    info!("play: Start");
     create_artifact_dir(artifact_dir);
     B::seed(device, training_config.seed);
 
@@ -118,19 +118,26 @@ pub fn play<B: AutodiffBackend>(
 
     loop {
         for _ in 0..training_config.num_epochs {
-            games.iter_mut().for_each(|game| {
+            games.iter_mut().zip(mctss.iter_mut()).for_each(|(game, mcts)| {
                 if let Outcome::Finished(_) = game.check_game_state(training_config.legal) {
                     info!("play: Gameover detected, restarting...");
                     *game = ChessGame::default();
+                    *mcts = Mcts::from_game(&game, 1000, *mcts_config);
                 }
             });
 
             // mcts roll out
-            info!("play: Start mcts simnulations");
+            info!("play: Start mcts simulations");
             for count in 0..mcts_config.num_simulations {
-                info!("play: simulation: {}", count);
+                info!("play: simulation number: {}", count);
                 mctss.iter_mut().for_each(|e| {
-                    e.traverse();
+                    // keep traversing while path is empty (path clears if traverses to terminal
+                    // node, dont want to expand terminal node)
+                    // edge arena empty only when no nodes expanded, so if path is empty and edge
+                    // arena not empty keep traversing otherwise just expand the first node
+                    while e.path.is_empty() && !e.edge_arena.is_empty() {
+                        e.traverse();
+                    }
                 });
                 expand_batch(&mut mctss[..], model.clone(), training_config, device);
             }

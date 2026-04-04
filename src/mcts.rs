@@ -2,14 +2,9 @@ use burn::prelude::Backend;
 use log::{debug, error, info, trace, warn};
 
 use crate::{
-    ChessGame, ChessMove, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, NetworkLabels, PieceType,
-    TrainingConfig, TrainingSample, XorShift64, chess_game::Outcome, model_make_outputs,
+    ChessGame, ChessMove, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, NetworkLabels, PieceType, TrainingConfig,
+    TrainingSample, XorShift64, chess_game::Outcome, model_make_outputs,
 };
-
-// should i refactor with these?
-struct PosIdx(usize);
-struct NodeIdx(usize);
-struct EdgeIdx(usize);
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct NodeData {
@@ -23,14 +18,7 @@ pub struct NodeData {
 
 impl NodeData {
     pub fn new(chess_position_idx: usize, parent_edge_idx: usize) -> Self {
-        Self {
-            chess_position_idx,
-            child_edge_range: None,
-            parent_edge_idx: Some(parent_edge_idx),
-            value: None,
-            is_terminal: false,
-            visits: 0,
-        }
+        Self { chess_position_idx, child_edge_range: None, parent_edge_idx: Some(parent_edge_idx), value: None, is_terminal: false, visits: 0 }
     }
 }
 
@@ -49,14 +37,6 @@ impl Default for MctsNode {
 }
 
 impl MctsNode {
-    fn new_select(chess_position_idx: usize, parent_edge_idx: usize) -> Self {
-        Self::PieceSelect { data: NodeData::new(chess_position_idx, parent_edge_idx) }
-    }
-
-    fn new_move(chess_position_idx: usize, parent_edge_idx: usize, from_sq: ChessSquare) -> Self {
-        Self::PieceMove { data: NodeData::new(chess_position_idx, parent_edge_idx), from_sq }
-    }
-
     fn get_data_mut(&mut self) -> &mut NodeData {
         match self {
             Self::PieceSelect { data } => data,
@@ -133,14 +113,7 @@ pub struct Mcts {
 impl Mcts {
     pub fn from_game(root: &ChessGame, size: usize, config: MctsConfig) -> Self {
         let node = MctsNode::PieceSelect {
-            data: NodeData {
-                chess_position_idx: 0,
-                child_edge_range: None,
-                parent_edge_idx: None,
-                value: None,
-                is_terminal: false,
-                visits: 0,
-            },
+            data: NodeData { chess_position_idx: 0, child_edge_range: None, parent_edge_idx: None, value: None, is_terminal: false, visits: 0 },
         };
         let mut node_arena = Vec::with_capacity(size * 2);
         node_arena.push(node);
@@ -148,14 +121,7 @@ impl Mcts {
         let mut position_arena = Vec::with_capacity(size);
         position_arena.push(root.position.clone());
 
-        Self {
-            config,
-            node_arena: node_arena,
-            edge_arena: Vec::with_capacity(size * 16),
-            position_arena: position_arena,
-            path: Vec::new(),
-            root: 0,
-        }
+        Self { config, node_arena: node_arena, edge_arena: Vec::with_capacity(size * 16), position_arena: position_arena, path: Vec::new(), root: 0 }
     }
 
     fn get_child_idx(&self, edge_idx: usize) -> Option<usize> {
@@ -163,11 +129,14 @@ impl Mcts {
     }
 
     pub fn select_best_edge(&self, node_idx: usize) -> Option<usize> {
+        info!("select_best_edge: Start");
         let node = &self.node_arena[node_idx];
         let position = &self.position_arena[node.get_data().chess_position_idx];
 
         let (start, end) = node.get_data().child_edge_range?;
         let visit_count = node.get_data().visits;
+
+        info!("select_best_edge: Node idx: {}, Position idx: {}, Edge idx: {}, {}", node_idx, node.get_data().chess_position_idx, start, end);
 
         let calc_puct = |edge_idx: usize| -> f32 {
             let edge = &self.edge_arena[edge_idx];
@@ -195,27 +164,32 @@ impl Mcts {
             let b = calc_puct(y);
             a.total_cmp(&b)
         });
+        info!("select_best_edge: Best edge idx: {:?}", idx);
+        info!("select_best_edge: End");
         idx
     }
 
     pub fn get_network_input(&self, node_idx: usize) -> NetworkInputs {
+        info!("get_network_input: Start");
         let node = &self.node_arena[node_idx];
         match node {
             MctsNode::PieceSelect { data } => {
                 let position = &self.position_arena[data.chess_position_idx];
-                info!("get_network_input: returning Network Input from idx: {}", &data.chess_position_idx);
+                info!("get_network_input: Generating tensor data from chess position idx: {}", &data.chess_position_idx);
+                info!("get_network_input: End");
                 NetworkInputs::from_position(&position, None)
             }
             MctsNode::PieceMove { data, from_sq } => {
                 let position = &self.position_arena[data.chess_position_idx];
-                info!("get_network_input: returning Network Input from idx: {}", &data.chess_position_idx);
+                info!("get_network_input: Generating tensor data from chess position idx: {}", &data.chess_position_idx);
+                info!("get_network_input: End");
                 NetworkInputs::from_position(&position, Some(&from_sq))
             }
         }
     }
 
     pub fn backprop(&mut self, value: [f32; 3]) {
-        info!("backprop: --- Start ---");
+        info!("backprop: Start");
         self.path.iter().for_each(|&idx| {
             trace!("backprop: updating edge idx: {}", idx);
             let edge = &mut self.edge_arena[idx];
@@ -227,11 +201,13 @@ impl Mcts {
             edge.mean_value[1] = edge.total_value[1] / edge.visits as f32;
             edge.mean_value[2] = edge.total_value[2] / edge.visits as f32;
             self.node_arena[edge.parent_node_idx].get_data_mut().visits += 1;
-        })
+        });
+        self.path.clear();
+        info!("backprop: End");
     }
 
     fn add_leaf(&mut self, edge_idx: usize) -> Option<usize> {
-        info!("add_leaf: --- Start ---");
+        info!("add_leaf: Start");
         let edge = &mut self.edge_arena[edge_idx];
         if edge.child_node_idx.is_some() {
             return None;
@@ -240,10 +216,7 @@ impl Mcts {
         let parent_node = &self.node_arena[edge.parent_node_idx];
         match parent_node {
             MctsNode::PieceSelect { data } => {
-                let new_node = MctsNode::PieceMove {
-                    data:    NodeData::new(data.chess_position_idx, edge_idx),
-                    from_sq: edge.square,
-                };
+                let new_node = MctsNode::PieceMove { data: NodeData::new(data.chess_position_idx, edge_idx), from_sq: edge.square };
                 info!(
                     "add_leaf: MctsNode::PieceMove added: {:?} at idx: {}, with arena length: {}",
                     &new_node,
@@ -254,19 +227,19 @@ impl Mcts {
                 let node_idx = self.node_arena.len() - 1;
                 info!("add_leaf: Node Arena Length: {}", self.node_arena.len());
                 edge.child_node_idx = Some(node_idx);
-                info!("add_leaf: --- End ---");
+                info!("add_leaf: End");
                 return Some(node_idx);
             }
             MctsNode::PieceMove { from_sq, .. } => {
                 let mut position = self.position_arena[parent_node.get_data().chess_position_idx].clone();
-                let outcome = position.check_game_state(self.config.legal);
                 let mov = ChessMove::new(*from_sq, edge.square, edge.promotion_piece);
 
                 position.make_move(&mov);
+                let outcome = position.check_game_state(self.config.legal);
+
                 self.position_arena.push(position);
 
-                let mut new_node =
-                    MctsNode::PieceSelect { data: NodeData::new(self.position_arena.len() - 1, edge_idx) };
+                let mut new_node = MctsNode::PieceSelect { data: NodeData::new(self.position_arena.len() - 1, edge_idx) };
                 if matches!(outcome, Outcome::Finished(_)) {
                     new_node.get_data_mut().is_terminal = true;
                     new_node.get_data_mut().value = Some(outcome.to_f32().unwrap());
@@ -276,6 +249,7 @@ impl Mcts {
                 let node_idx = self.node_arena.len() - 1;
                 edge.child_node_idx = Some(node_idx);
                 info!("add_leaf: MctsNode::PieceSelect added, Idx: {}", node_idx);
+                info!("add_leaf: End");
                 return Some(node_idx);
             }
         }
@@ -295,7 +269,7 @@ impl Mcts {
     }
 
     pub fn make_targets(&mut self) -> TrainingSample {
-        info!("make_targets: --- Start ---");
+        info!("make_targets: Start");
         let node = &self.node_arena[0];
         let position = &self.get_position(0);
         let inputs = match node {
@@ -306,61 +280,66 @@ impl Mcts {
         let (start, end) = node.get_data().child_edge_range.unwrap();
         let total_visits: u32 = self.edge_arena[start..end].iter().map(|e| e.visits).sum();
         let mut target_policy = [0.0; 64];
-        self.edge_arena[start..end]
-            .iter()
-            .for_each(|e| target_policy[e.square.0 as usize] += e.visits as f32 / total_visits as f32);
+        self.edge_arena[start..end].iter().for_each(|e| target_policy[e.square.0 as usize] += e.visits as f32 / total_visits as f32);
 
-        let best_edge_idx =
-            (start..end).max_by(|a, b| self.edge_arena[*a].visits.cmp(&self.edge_arena[*b].visits)).unwrap();
+        let best_edge_idx = (start..end).max_by(|a, b| self.edge_arena[*a].visits.cmp(&self.edge_arena[*b].visits)).unwrap();
         let best_edge = &self.edge_arena[best_edge_idx];
         self.root = best_edge.child_node_idx.unwrap();
         let targets = NetworkLabels { policy: target_policy, value: best_edge.mean_value };
-        info!("make_targets: --- End ---");
+        info!("make_targets: End");
         TrainingSample { inputs, targets }
     }
 
     pub fn traverse(&mut self) {
-        info!("traverse: --- Start ---");
+        info!("traverse: Start");
 
         let mut current_node_idx = 0;
         self.path.clear();
 
         loop {
-            trace!("traverse: Path Length: {}", self.path.len());
+            debug!("traverse: Path Length: {}", self.path.len());
 
+            // If current node is expanded, push edge
             if let Some(edge_idx) = self.select_best_edge(current_node_idx) {
-                trace!("traverse: Found Edge: {}", edge_idx);
+                info!("traverse: Found edge ({}) for node: {}", edge_idx, current_node_idx);
                 self.path.push(edge_idx);
                 let next_node_idx = self.edge_arena[edge_idx].child_node_idx;
 
-                if next_node_idx.is_none() {
-                    trace!("traverse: Edge has no leaf node. Node Arena Len: {}", self.node_arena.len());
-                    let node_idx = self.add_leaf(edge_idx).unwrap();
-                    info!("traverse: Edge has no leaf node. Adding node with idx: {}", self.node_arena.len() - 1);
-                    let node = &self.node_arena[node_idx];
-                    if node.get_data().is_terminal {
-                        trace!("Added node is terminal, outcome: {:?}. Breaking.", node.get_data().value.unwrap());
-                        let value = node.get_data().value;
-                        self.backprop(value.unwrap());
-                        break;
-                    }
-                } else {
-                    info!(
-                        "traverse: Edge has leaf node. Moving from idx: {} to {}",
-                        current_node_idx,
-                        next_node_idx.unwrap()
-                    );
-                    let node = &self.node_arena[next_node_idx.unwrap()];
+                if let Some(next_node_idx) = next_node_idx {
+                    // If edge has child node, check if terminal
+                    info!("traverse: Edge has leaf node. Moving from node idx: {} to {}", current_node_idx, next_node_idx);
+                    let node = &self.node_arena[next_node_idx];
                     if node.get_data().is_terminal {
                         info!("traverse: Node is terminal, adding edge to path and breaking");
                         self.path.push(edge_idx);
                         self.backprop(node.get_data().value.unwrap());
+                        info!("traverse: End");
                         break;
                     }
-                    current_node_idx = next_node_idx.unwrap();
+                    info!("traverse: Node found at idx: {}", next_node_idx);
+                    current_node_idx = next_node_idx;
+                } else {
+                    info!("traverse: Edge has no leaf node. Creating...");
+                    let node_idx = self.add_leaf(edge_idx).unwrap();
+                    let node = &self.node_arena[node_idx];
+                    if node.get_data().is_terminal {
+                        let value = node.get_data().value;
+                        info!("traverse: Node is terminal, outcome: {:?}. Backpropogating...", &value.unwrap());
+                        info!("traverse: End");
+                        self.backprop(value.unwrap());
+                        break;
+                    }
                 }
+            // If current node not expanded, path is complete.
             } else {
-                info!("traverse: No edges found for current node. Path: {:?}", &self.path);
+                // redundant check?
+                let node = &self.node_arena[current_node_idx];
+                if node.get_data().is_terminal {
+                    self.backprop(node.get_data().value.unwrap());
+                    self.path.clear();
+                }
+                info!("traverse: No edges found for node: {}", current_node_idx);
+                info!("traverse: End");
                 break;
             }
         }
@@ -381,16 +360,23 @@ impl Mcts {
     }
 }
 
-pub fn expand_batch<B: Backend>(
-    mctss: &mut [Mcts],
-    model: ChessTransformer<B>,
-    config: &TrainingConfig,
-    device: &B::Device,
-) {
-    info!("expand_batch: --- Start ---");
+pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, config: &TrainingConfig, device: &B::Device) {
+    info!("expand_batch: Start");
 
     let mut masks: Vec<[bool; 64]> = Vec::with_capacity(config.batch_size);
     let mut inputs: Vec<NetworkInputs> = Vec::with_capacity(config.batch_size);
+
+    let print_mask = |mask: &[bool; 64]| -> String {
+        let mut ascii = String::new();
+        for i in (0..8).rev() {
+            for j in 0..8 {
+                ascii.push((mask[i * 8 + j] as u8 + b'0') as char);
+                ascii.push(' ');
+            }
+            ascii.push('\n');
+        }
+        ascii
+    };
 
     info!("expand_batch: Generating masks and Network inputs");
     mctss.iter().for_each(|game| {
@@ -401,7 +387,6 @@ pub fn expand_batch<B: Backend>(
 
         info!("expand_batch: expanding node idx: {}", node_idx);
         inputs.push(game.get_network_input(node_idx));
-        info!("expand_batch: added network input");
 
         let node = &game.node_arena[node_idx];
         let position_idx = node.get_data().chess_position_idx;
@@ -409,21 +394,10 @@ pub fn expand_batch<B: Backend>(
         match node {
             MctsNode::PieceSelect { .. } => {
                 info!("expand_batch: generating select mask for position idx: {}", position_idx);
-                info!("expand_batch: \n{}", position.chessboard.display_ascii());
-                let temp = || -> String {
-                    let thing = position.make_mask(config.legal, None); 
-                    let mut thing2 = String::new();
-                    for i in (0..8).rev() {
-                        for j in (0..8).rev() {
-                            thing2.push(((thing[i * 8 + j] as u8 + b'0')) as char);
-                            thing2.push(' ');
-                        }
-                        thing2.push('\n');
-                    }
-                    thing2
-                };
-                info!("{}", temp());
-                masks.push(position.make_mask(config.legal, None));
+                info!("expand_batch: displaying chessboard for node\n{}", position.chessboard.display_ascii());
+                let mask = position.make_mask(config.legal, None);
+                info!("expand_batch: displaying mask:\n{}", print_mask(&mask));
+                masks.push(mask);
             }
             MctsNode::PieceMove { from_sq, .. } => {
                 info!("expand_batch: generating move mask for position idx: {}", position_idx);
@@ -440,10 +414,9 @@ pub fn expand_batch<B: Backend>(
     let mut mask_in: Vec<bool> = vec![false; config.batch_size * 64];
     masks.iter().enumerate().for_each(|(i, mask)| mask_in[(i * 64)..(i * 64 + 64)].copy_from_slice(mask));
 
-    info!("expand batch: --- Running model inference ---");
-    let outputs: Vec<NetworkLabels> =
-        model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
-    info!("expand batch: --- inference done ---");
+    info!("expand batch: Running model inference");
+    let outputs: Vec<NetworkLabels> = model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
+    info!("expand batch: Inference done");
 
     debug!("expand_batch: Policy length: {:?}", &outputs[0].policy.len());
     debug!("expand_batch: value: {:?}", &outputs[0].value);
@@ -455,7 +428,10 @@ pub fn expand_batch<B: Backend>(
 
         let start = game.edge_arena.len();
         let (policy, value) = (output.as_squares(), output.value);
-        info!("expand_batch: --- Adding edges ---");
+        info!("expand_batch: Adding edges");
+        info!("{}", position);
+        info!("{}", print_mask(&mask));
+        assert!(mask.iter().any(|&e| e == true) == true, "mask is empty!! wtf?!");
         for i in 0..64 {
             // this means only legal/pseudo legal moves are pushed
             if mask[i] == true {
@@ -467,8 +443,7 @@ pub fn expand_batch<B: Backend>(
                         if let Some(moves) = position.expand_if_prom(mov) {
                             for mov in moves {
                                 info!("expand_batch: Adding promotion edge to MctsNode::PieceMove: {}", &node_idx);
-                                let edge = MctsEdge::new(policy[i].0, policy[i].1 / 4.0, node_idx)
-                                    .with_prom(mov.promotion.unwrap());
+                                let edge = MctsEdge::new(policy[i].0, policy[i].1 / 4.0, node_idx).with_prom(mov.promotion.unwrap());
                                 game.edge_arena.push(edge);
                             }
                         } else {
