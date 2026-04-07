@@ -14,17 +14,20 @@ debug | d)
 run | r)
     cargo run --release "$@"
     ;;
+build_nvidia | bn)
+    cargo build --release --no-default-features --features cuda
+    ;;
 legal_masked|lm)
-    cargo run --release -- -l -m -p "~/chess-engine-stats/legal_masked/"
+    ./target/release/chess-engine -l -m -p "~/chess-engine-stats/legal_masked/"
     ;;
 legal_unmasked|lu)
-    cargo run --release -- -l -p "~/chess-engine-stats/legal_unmasked/"
+    ./target/release/chess-engine -l -p "~/chess-engine-stats/legal_unmasked/"
     ;;
 pseudo_legal_masked|pm)
-    cargo run --release -- -m -p "~/chess-engine-stats/pseudo_legal_masked/"
+    ./target/release/chess-engine -m -p "~/chess-engine-stats/pseudo_legal_masked/"
     ;;
 pseudo_legal_unmasked|pu)
-    cargo run --release -- -p "~/chess-engine-stats/pseudo_legal_unmasked/"
+    ./target/release/chess-engine -p "~/chess-engine-stats/pseudo_legal_unmasked/"
     ;;
 *)
     echo "Usage: $0 {test|t|debug|d|run|r}"
