@@ -1,5 +1,8 @@
+use core::fmt;
+
 use burn::{
-    data::dataloader::batcher::Batcher, tensor::{Tensor, backend::Backend}
+    data::dataloader::batcher::Batcher,
+    tensor::{Tensor, TensorData, backend::Backend},
 };
 use rand::{rngs::SmallRng, seq::IndexedRandom};
 
@@ -12,10 +15,23 @@ pub struct NetworkInputs {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct NetworkLabels
-{
+pub struct NetworkLabels {
     pub policy: [f32; 64],
     pub value:  [f32; 3],
+}
+
+impl fmt::Display for NetworkLabels {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = String::new();
+        for i in 0..8 {
+            for j in 0..8 {
+                output.push_str(&format!("{:.4} ", &self.policy[i * 8 + j].to_string()));
+            }
+            output.push('\n');
+        }
+        output.push_str(&format!("{:?}", self.value));
+        write!(f, "{}", output)
+    }
 }
 
 impl Default for NetworkInputs {
@@ -39,11 +55,7 @@ impl NetworkInputs {
         let (chess_board, castling_rights, ep_sq) = if position.side_to_move == Color::White {
             (position.chessboard.clone(), position.castling_rights, position.en_passant)
         } else {
-            (
-                position.chessboard.flip_board(),
-                position.castling_rights.flip_perspective(),
-                position.en_passant.map(|x| x.square_opposite()),
-            )
+            (position.chessboard.flip_board(), position.castling_rights.flip_perspective(), position.en_passant.map(|x| x.square_opposite()))
         };
 
         let mut data = [0f32; 64 * 14];
@@ -128,12 +140,17 @@ impl<B: Backend> Batcher<B, TrainingSample, ChessBatch<B>> for ChessBatcher {
             values.extend_from_slice(&item.targets.value)
         }
 
-        ChessBatch {
-            boards: Tensor::<B, 3>::from_floats(boards.as_slice(), device).reshape([n, 64, 14]),
-            metas: Tensor::<B, 2>::from_floats(metas.as_slice(), device).reshape([n, 5]),
-            policy_targets: Tensor::<B, 2>::from_floats(targets.as_slice(), device).reshape([n, 64]),
-            value_targets: Tensor::<B, 2>::from_floats(values.as_slice(), device).reshape([n, 3]),
-        }
+        let board_data = TensorData::new(boards, [n, 64, 14]);
+        let metas_data = TensorData::new(metas, [n, 5]);
+        let pol_target = TensorData::new(targets, [n, 64]);
+        let val_target = TensorData::new(values, [n, 3]);
+
+        let boards = Tensor::from_data(board_data, device);
+        let metas = Tensor::from_data(metas_data, device);
+        let policy_targets = Tensor::from_data(pol_target, device);
+        let value_targets = Tensor::from_data(val_target, device);
+
+        ChessBatch { boards, metas, policy_targets, value_targets }
     }
 }
 
@@ -158,6 +175,10 @@ impl ReplayBuffer {
     }
 
     pub fn sample_batch<B: Backend>(&self, batch_size: usize, rng: &mut SmallRng, device: &B::Device) -> ChessBatch<B> {
+        if self.buffer.len() <= batch_size {
+            // TODO
+            panic!("not enough food in buffer");
+        }
         let samples: Vec<TrainingSample> = self.buffer.sample(rng, batch_size).cloned().collect();
         let batcher = ChessBatcher {};
         batcher.batch(samples, device)
