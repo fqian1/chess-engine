@@ -3,7 +3,7 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use burn::backend::{Autodiff, Cuda};
+use burn::backend::Autodiff;
 use burn::module::Module;
 use burn::optim::AdamConfig;
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
@@ -57,13 +57,19 @@ fn main() {
 
     let args = Args::parse();
 
-    type MyInferenceBackend = Cuda<f32, i32>;
+    #[cfg(feature = "cuda")]
+    pub type MyInferenceBackend = burn::backend::Cuda<f32, i32>;
+
+    #[cfg(not(feature = "cuda"))] 
+    pub type MyInferenceBackend = burn::backend::Wgpu<f32, i32>;
+
+
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
 
     let artifact_dir = args.path.clone();
     let artifact_dir_str = args.path.to_str().unwrap_or("tmp/stats/");
 
-    let device = burn::backend::cuda::CudaDevice::default();
+    let device = Default::default();
 
     let mcts_config = MctsConfig { num_simulations: args.num_simulations, c_puct: args.c_puct, temperature: args.temperature, legal: args.legal };
 

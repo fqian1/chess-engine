@@ -10,17 +10,18 @@ opt-level = "s"
 panic = "abort"
 strip = "symbols"
 
-[build]
-rustflags = ["-C", "target-cpu=native", "link-arg=-fuse-ld=mold"]
-
-
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+rustflags = ["-C", "target-cpu=native", "link-arg=-fuse-ld=mold"]
+
+[features ]
+default = ["wgpu"]
+wgpu = ["burn/wgpu"]
+cuda = ["burn/cuda"]
 
 [dependencies]
 arrayvec = "0.7.6"
-burn = { version = "0.21.0-pre.1", features = ["std", "autodiff", "fusion", "wgpu", "cuda", "train", "autotune" ], default-features = false }
+burn = { version = "0.21.0-pre.1", features = ["std", "autodiff", "fusion", "train", "autotune" ], default-features = false }
 clap = { version = "4.6.0", features = ["derive"] }
 env_logger = "0.11.10"
 log = {version = "0.4.29", features = ["release_max_level_off"]}
