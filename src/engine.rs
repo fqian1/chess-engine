@@ -1,7 +1,10 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+
 use burn::{
     Tensor,
     config::Config,
-    module::Module,
+    module::{AutodiffModule, Module},
     optim::{Adam, AdamConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
     prelude::Backend,
     record::{FullPrecisionSettings, NamedMpkFileRecorder},
@@ -9,6 +12,8 @@ use burn::{
 };
 use log::info;
 use rand::{SeedableRng, rngs::SmallRng};
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::prelude::*;
 
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,

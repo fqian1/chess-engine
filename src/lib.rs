@@ -1,6 +1,5 @@
 #![recursion_limit = "256"]
 
-#![feature(const_trait_impl)]
 pub mod bitboard;
 pub mod castling;
 pub mod chess_board;

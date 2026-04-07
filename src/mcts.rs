@@ -1,8 +1,11 @@
 use core::fmt;
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 use std::io::Read;
 
 use burn::prelude::Backend;
-use log::{debug, info, trace};
 
 use crate::{
     ChessGame, ChessMove, ChessPosition, ChessSquare, ChessTransformer, Color, NetworkInputs, NetworkLabels, PieceType, TrainingConfig,

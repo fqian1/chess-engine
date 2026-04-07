@@ -22,18 +22,19 @@ pub fn display_moves(moves: &Vec<ChessMove>) {
 }
 
 fn main() {
-    Builder::new()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+    Builder::new().filter_level(log::LevelFilter::Info).init();
 
-    type MyInferenceBackend = Wgpu<f32, i32>;
+    let args = Args::parse();
+
+    type MyInferenceBackend = Cuda<f32, i32>;
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
 
-    let artifact_dir = "tmp/stats";
+    let artifact_dir = args.path.clone();
+    let artifact_dir_str = args.path.to_str().unwrap_or("tmp/stats/");
 
-    let device = burn::backend::wgpu::WgpuDevice::default();
+    let device = burn::backend::cuda::CudaDevice::default();
 
-    let mcts_config = MctsConfig { num_simulations: 100, c_puct: 1.25, temperature: 0.01, legal: true };
+    let mcts_config = MctsConfig { num_simulations: args.num_simulations, c_puct: args.c_puct, temperature: args.temperature, legal: args.legal };
 
     let size = 8;
     let n_heads = size;
