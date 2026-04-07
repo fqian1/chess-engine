@@ -1,6 +1,9 @@
 let
   rust_overlay = import (builtins.fetchTarball "https://github.com/oxalica/rust-overlay/archive/master.tar.gz");
-  pkgs = import <nixpkgs> {overlays = [rust_overlay];};
+  pkgs = import <nixpkgs> {
+    overlays = [rust_overlay];
+    config.allowUnfree = true;
+  };
   rustNightly = pkgs.rust-bin.nightly.latest.default.override {
     extensions = ["rust-src" "rust-analyzer"];
   };
@@ -10,10 +13,12 @@ in
       rustNightly
       pkgs.cargo-public-api
       pkgs.cargo-watch
+      pkgs.cudaPackages.cudatoolkit 
+      pkgs.linuxPackages.nvidia_x11 
     ];
-    # Weird thing to expose vulkan backend
+
     shellHook = ''
-      LD_LIBRARY_PATH="''${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${
+      export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${
         with pkgs;
           lib.makeLibraryPath [
             vulkan-loader
@@ -21,11 +26,18 @@ in
             xorg.libXcursor
             xorg.libXi
             xorg.libXrandr
+            cudaPackages.cudatoolkit
+            linuxPackages.nvidia_x11
           ]
-      }"
-      alias dbg='./debug.sh'
-      export LD_LIBRARY_PATH
-        echo "Rust nightly shell loaded"
-        rustc --version
+      }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+
+      export CUDA_PATH=${pkgs.cudaPackages.cudatoolkit}
+      export EXTRA_LDFLAGS="-L/lib -L${pkgs.linuxPackages.nvidia_x11}/lib"
+      export EXTRA_CCFLAGS="-I/usr/include"
+
+      alias run='./run.sh'
+      echo "Rust nightly shell with CUDA support loaded"
+      rustc --version
+      nvcc --version
     '';
   }
