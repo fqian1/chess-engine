@@ -57,6 +57,15 @@ fn main() {
 
     let args = Args::parse();
 
+    let mut path = args.path.clone();
+    if path.starts_with("~") {
+        if let Ok(home) = std::env::var("HOME") {
+            let path_str = path.to_str().unwrap_or("");
+            path = PathBuf::from(path_str.replacen('~', &home, 1));
+        }
+    }
+    let artifact_dir = path; // Use the expanded path
+
     #[cfg(feature = "cuda")]
     pub type MyInferenceBackend = burn::backend::Cuda<f32, i32>;
 
@@ -66,7 +75,6 @@ fn main() {
 
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
 
-    let artifact_dir = args.path.clone();
     let artifact_dir_str = args.path.to_str().unwrap_or("tmp/stats/");
 
     let device = Default::default();
