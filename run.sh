@@ -14,17 +14,17 @@ debug | d)
 run | r)
     cargo run --release "$@"
     ;;
-legal_masked)
-    cargo run --release -- --legal --masked -p "./legal_masked/"
+legal_masked|lm)
+    cargo run --release -- -l -m -p "~/chess-engine-stats/legal_masked/"
     ;;
-legal_unmasked)
-    cargo run --release -- --legal -p "./legal_unmasked/"
+legal_unmasked|lu)
+    cargo run --release -- -l -p "~/chess-engine-stats/legal_unmasked/"
     ;;
-pseudo_legal_masked)
-    cargo run --release -- --masked -p "./pseudo_legal_masked/"
+pseudo_legal_masked|pm)
+    cargo run --release -- -m -p "~/chess-engine-stats/pseudo_legal_masked/"
     ;;
-pseudo_legal_unmasked)
-    cargo run --release -- -p "./pseudo_legal_unmasked/"
+pseudo_legal_unmasked|pu)
+    cargo run --release -- -p "~/chess-engine-stats/pseudo_legal_unmasked/"
     ;;
 *)
     echo "Usage: $0 {test|t|debug|d|run|r}"
