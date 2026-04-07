@@ -30,24 +30,23 @@ pub struct ChessGame {
 
 impl Default for ChessGame {
     fn default() -> Self {
-        let mut game = ChessGame::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let mut game = ChessGame::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
         let hash = game.position.calculate_hash();
         game.position.zobrist_hash = hash;
+        game.game_history.push(game.position.clone());
         game
     }
 }
 
 impl ChessGame {
-    pub fn from_fen(fen: &str) -> Self {
+    pub fn from_fen(fen: &str) -> Result<Self, &str> {
         let mut parts = fen.split(' ');
-        let board_str = parts.next().expect("FEN missing board");
-        let side_str = parts.next().expect("FEN missing side to move");
-        let castling_str = parts.next().expect("FEN missing castling rights");
-        let ep_str = parts.next().expect("FEN missing en passant square");
-        let halfmove_clock: u32 =
-            parts.next().expect("FEN missing halfmove clock").parse().expect("Invalid halfmove clock");
-        let fullmove_counter: u32 =
-            parts.next().expect("FEN missing fullmove counter").parse().expect("Invalid fullmove counter");
+        let board_str = parts.next().ok_or("FEN missing board")?;
+        let side_str = parts.next().ok_or("FEN missing side to move")?;
+        let castling_str = parts.next().ok_or("FEN missing castling rights")?;
+        let ep_str = parts.next().ok_or("FEN missing en passant square")?;
+        let halfmove_clock: u32 = parts.next().ok_or("FEN missing halfmove clock")?.parse().map_err(|_| "missing clock")?;
+        let fullmove_counter: u32 = parts.next().ok_or("FEN missing fullmove counter")?.parse().map_err(|_| "missing counter")?;
 
         let mut board_array = [None; 64];
 
@@ -61,7 +60,7 @@ impl ChessGame {
                     file = 0;
                 }
                 '1'..='8' => {
-                    file += c.to_digit(10).expect("from_fen") as u8;
+                    file += c.to_digit(10).ok_or("from_fen")? as u8;
                 }
                 _ => {
                     let color = if c.is_uppercase() { Color::White } else { Color::Black };
@@ -73,7 +72,7 @@ impl ChessGame {
                         'R' | 'r' => PieceType::Rook,
                         'Q' | 'q' => PieceType::Queen,
                         'K' | 'k' => PieceType::King,
-                        _ => unreachable!("Invalid piece char"),
+                        _ => return Err("Invalid piece type"),
                     };
 
                     let index = (rank as usize) * 8 + (file as usize);
@@ -86,13 +85,13 @@ impl ChessGame {
 
         let en_passant = match ep_str {
             "-" => None,
-            s => Some(ChessSquare::from_name(s).expect("Invalid en passant square")),
+            s => Some(ChessSquare::from_name(s).ok_or("Invalid en passant square")?),
         };
 
         let mut chessboard = ChessBoard::empty();
         for (index, piece_option) in board_array.into_iter().enumerate() {
             if let Some(piece) = piece_option {
-                chessboard.add_piece(piece, ChessSquare::new(index as u8).expect("from_fen"));
+                chessboard.add_piece(piece, ChessSquare::new(index as u8).ok_or("from_fen")?);
             }
         }
 
@@ -108,7 +107,7 @@ impl ChessGame {
 
         position.generate_pseudolegal();
 
-        ChessGame { position, fullmove_counter, game_history: Vec::new(), outcome: Outcome::Unfinished }
+        Ok(ChessGame { position, fullmove_counter, game_history: Vec::new(), outcome: Outcome::Unfinished })
     }
 
     pub fn to_fen(&self) -> String {
@@ -134,11 +133,7 @@ impl ChessGame {
                         PieceType::King => 'k',
                     };
 
-                    fen.push(if color == Color::White {
-                        c.to_ascii_uppercase()
-                    } else {
-                        c
-                    });
+                    fen.push(if color == Color::White { c.to_ascii_uppercase() } else { c });
                 } else {
                     empty += 1;
                 }
@@ -153,11 +148,7 @@ impl ChessGame {
         }
 
         fen.push(' ');
-        fen.push(if self.position.side_to_move == Color::White {
-            'w'
-        } else {
-            'b'
-        });
+        fen.push(if self.position.side_to_move == Color::White { 'w' } else { 'b' });
         fen.push(' ');
         fen.push_str(&self.position.castling_rights.to_fen());
         fen.push(' ');
@@ -229,7 +220,7 @@ impl ChessGame {
     }
 
     pub fn unmake_move(&mut self) {
-        // this defeats the purpose of make unmake. who cares
+        // this defeats the purpose of make unmake. unused.
         let entry = self.game_history.pop().expect("No history to unmake");
         self.position = entry;
         self.position.halfmove_clock -= 1;
@@ -269,8 +260,7 @@ impl ChessGame {
     }
 
     pub fn check_game_state(&self, legal: bool) -> Outcome {
-        let repetition_count =
-            self.game_history.iter().filter(|entry| entry.zobrist_hash == self.position.zobrist_hash).count();
+        let repetition_count = self.game_history.iter().filter(|entry| entry.zobrist_hash == self.position.zobrist_hash).count();
 
         if repetition_count >= 3 {
             return Outcome::Finished(None);

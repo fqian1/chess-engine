@@ -3,9 +3,7 @@ use core::fmt;
 use arrayvec::ArrayVec;
 use log::{info, trace};
 
-use crate::{
-    Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome,
-};
+use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessPosition {
@@ -110,22 +108,12 @@ impl ChessPosition {
             let mut ray = Bitboard::EMPTY;
             for i in 0..4 {
                 let mut blockers = ray_bb[i] & self.chessboard.all_pieces;
-                if cfg!(debug_assertions) {
-                    // println!("from_sq: {}\nray: {}\nblocker: {}", from_sq, ray_bb[i], blockers);
-                    // println!("blockers: {}\n all_pieces: {}",blockers, self.chessboard.all_pieces);
-                }
                 if blockers.is_empty() {
                     ray |= ray_bb[i]
                 } else {
                     let to_sq = if i < 2 { blockers.pop_msb() } else { blockers.pop_lsb() };
                     let to_sq = to_sq.expect("No to_sq found in blockers");
                     if opps.is_set(to_sq) {
-                        if cfg!(debug_assertions) {
-                            println!(
-                                "from_sq: {}\nblockers:\n{}\nray:\n {}\nto_sq: {}",
-                                from_sq, ray_bb[i], blockers, to_sq
-                            );
-                        }
                         ray.set(to_sq);
                     }
                     // for some reason, i made all empty bitboards None, when adjacent squares
@@ -161,8 +149,7 @@ impl ChessPosition {
                 let _ = moves.try_push(ChessMove::new(from_sq, sq, None));
             }
             let clear = |from: ChessSquare, to: ChessSquare| -> bool {
-                let mut between =
-                    ChessBoard::BETWEEN[from.0 as usize][to.0 as usize].expect("failed to find between sq castling");
+                let mut between = ChessBoard::BETWEEN[from.0 as usize][to.0 as usize].expect("failed to find between sq castling");
                 // If no blockers
                 if (between & self.chessboard.all_pieces).is_empty() {
                     // If no squares in check (castling into check is pseudo legal, but not
@@ -250,61 +237,9 @@ impl ChessPosition {
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
-        let keys = ZobristKeys::get();
         let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
         let captured_piece = self.chessboard.get_piece_at(mov.to);
 
-        let is_en_passant =
-            moving_piece.piece_type == PieceType::Pawn && self.en_passant.is_some_and(|sq| sq == mov.to);
-        let is_castling =
-            moving_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2;
-
-        // Remove Old Global State from Hash
-        self.zobrist_hash ^= keys.castling[self.castling_rights.0 as usize];
-        if let Some(ep) = self.en_passant {
-            self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
-        }
-        self.zobrist_hash ^= keys.side_to_move;
-
-        // Remove Moving Piece from From
-        self.zobrist_hash ^=
-            keys.pieces[moving_piece.color as usize][moving_piece.piece_type as usize][mov.from.0 as usize];
-
-        // Remove Captured Piece
-        if is_en_passant {
-            let cap_sq_idx = if self.side_to_move == Color::White {
-                mov.to.0 - 8
-            } else {
-                mov.to.0 + 8
-            };
-            self.zobrist_hash ^=
-                keys.pieces[self.side_to_move.opposite() as usize][PieceType::Pawn as usize][cap_sq_idx as usize];
-        } else if let Some(cap) = captured_piece {
-            self.zobrist_hash ^= keys.pieces[cap.color as usize][cap.piece_type as usize][mov.to.0 as usize];
-        }
-
-        // Update Hash
-        // Add Moving Piece to Destination
-        let final_piece_type = mov.promotion.unwrap_or(moving_piece.piece_type);
-        self.zobrist_hash ^= keys.pieces[moving_piece.color as usize][final_piece_type as usize][mov.to.0 as usize];
-
-        // Handle Castling Rook
-        if is_castling {
-            let (rook_from, rook_to) = match (self.side_to_move, mov.to.file()) {
-                (Color::White, 6) => (ChessSquare::H1, ChessSquare::F1),
-                (Color::White, 2) => (ChessSquare::A1, ChessSquare::D1),
-                (Color::Black, 6) => (ChessSquare::H8, ChessSquare::F8),
-                (Color::Black, 2) => (ChessSquare::A8, ChessSquare::D8),
-                _ => unreachable!(),
-            };
-            // Remove Rook from corner
-            self.zobrist_hash ^=
-                keys.pieces[self.side_to_move as usize][PieceType::Rook as usize][rook_from.0 as usize];
-            // Add Rook to new square
-            self.zobrist_hash ^= keys.pieces[self.side_to_move as usize][PieceType::Rook as usize][rook_to.0 as usize];
-        }
-
-        // Update Internal Game State
         let mut rights_to_remove = CastlingRights::empty();
         if moving_piece.piece_type == PieceType::King {
             match self.side_to_move {
@@ -329,14 +264,12 @@ impl ChessPosition {
 
         self.chessboard.apply_move(mov, self.side_to_move, self.en_passant);
 
-        // Update En Passant after making move
         self.en_passant = None;
         if moving_piece.piece_type == PieceType::Pawn && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2 {
             let skipped_rank = (mov.from.rank() + mov.to.rank()) / 2;
             self.en_passant = ChessSquare::from_coords(mov.from.file(), skipped_rank);
         }
 
-        // Update Clocks
         if moving_piece.piece_type == PieceType::Pawn || captured_piece.is_some() {
             self.halfmove_clock = 0;
         } else {
@@ -345,38 +278,126 @@ impl ChessPosition {
 
         self.side_to_move = self.side_to_move.opposite();
 
-        // Hash global state
-        self.zobrist_hash ^= keys.castling[self.castling_rights.0 as usize];
-        if let Some(ep) = self.en_passant {
-            self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
-        }
-
         self.generate_pseudolegal();
 
-        // debug_assert!(self.zobrist_hash == self.calculate_hash());
-        // this fails lol. 
+        self.zobrist_hash = self.calculate_hash();
     }
+
+    // pub fn make_move(&mut self, mov: &ChessMove) {
+    //     let keys = ZobristKeys::get();
+    //     let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
+    //     let captured_piece = self.chessboard.get_piece_at(mov.to);
+    //
+    //     let is_en_passant =
+    //         moving_piece.piece_type == PieceType::Pawn && self.en_passant.is_some_and(|sq| sq == mov.to);
+    //     let is_castling =
+    //         moving_piece.piece_type == PieceType::King && (mov.from.file() as i8 - mov.to.file() as i8).abs() == 2;
+    //
+    //     // Remove Old Global State from Hash
+    //     self.zobrist_hash ^= keys.castling[self.castling_rights.0 as usize];
+    //     if let Some(ep) = self.en_passant {
+    //         self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
+    //     }
+    //     self.zobrist_hash ^= keys.side_to_move;
+    //
+    //     // Remove Moving Piece from From
+    //     self.zobrist_hash ^=
+    //         keys.pieces[moving_piece.color as usize][moving_piece.piece_type as usize][mov.from.0 as usize];
+    //
+    //     // Remove Captured Piece
+    //     if is_en_passant {
+    //         let cap_sq_idx = if self.side_to_move == Color::White {
+    //             mov.to.0 - 8
+    //         } else {
+    //             mov.to.0 + 8
+    //         };
+    //         self.zobrist_hash ^=
+    //             keys.pieces[self.side_to_move.opposite() as usize][PieceType::Pawn as usize][cap_sq_idx as usize];
+    //     } else if let Some(cap) = captured_piece {
+    //         self.zobrist_hash ^= keys.pieces[cap.color as usize][cap.piece_type as usize][mov.to.0 as usize];
+    //     }
+    //
+    //     // Update Hash
+    //     // Add Moving Piece to Destination
+    //     let final_piece_type = mov.promotion.unwrap_or(moving_piece.piece_type);
+    //     self.zobrist_hash ^= keys.pieces[moving_piece.color as usize][final_piece_type as usize][mov.to.0 as usize];
+    //
+    //     // Handle Castling Rook
+    //     if is_castling {
+    //         let (rook_from, rook_to) = match (self.side_to_move, mov.to.file()) {
+    //             (Color::White, 6) => (ChessSquare::H1, ChessSquare::F1),
+    //             (Color::White, 2) => (ChessSquare::A1, ChessSquare::D1),
+    //             (Color::Black, 6) => (ChessSquare::H8, ChessSquare::F8),
+    //             (Color::Black, 2) => (ChessSquare::A8, ChessSquare::D8),
+    //             _ => unreachable!(),
+    //         };
+    //         // Remove Rook from corner
+    //         self.zobrist_hash ^=
+    //             keys.pieces[self.side_to_move as usize][PieceType::Rook as usize][rook_from.0 as usize];
+    //         // Add Rook to new square
+    //         self.zobrist_hash ^= keys.pieces[self.side_to_move as usize][PieceType::Rook as usize][rook_to.0 as usize];
+    //     }
+    //
+    //     // Update Internal Game State
+    //     let mut rights_to_remove = CastlingRights::empty();
+    //     if moving_piece.piece_type == PieceType::King {
+    //         match self.side_to_move {
+    //             Color::White => rights_to_remove |= CastlingRights::WHITE_KINGSIDE | CastlingRights::WHITE_QUEENSIDE,
+    //             Color::Black => rights_to_remove |= CastlingRights::BLACK_KINGSIDE | CastlingRights::BLACK_QUEENSIDE,
+    //         }
+    //     }
+    //
+    //     let get_rights = |sq: ChessSquare| -> CastlingRights {
+    //         match sq {
+    //             ChessSquare::H1 => CastlingRights::WHITE_KINGSIDE,
+    //             ChessSquare::A1 => CastlingRights::WHITE_QUEENSIDE,
+    //             ChessSquare::H8 => CastlingRights::BLACK_KINGSIDE,
+    //             ChessSquare::A8 => CastlingRights::BLACK_QUEENSIDE,
+    //             _ => CastlingRights::empty(),
+    //         }
+    //     };
+    //
+    //     rights_to_remove |= get_rights(mov.from);
+    //     rights_to_remove |= get_rights(mov.to);
+    //     self.castling_rights.remove(rights_to_remove);
+    //
+    //     self.chessboard.apply_move(mov, self.side_to_move, self.en_passant);
+    //
+    //     // Update En Passant after making move
+    //     self.en_passant = None;
+    //     if moving_piece.piece_type == PieceType::Pawn && (mov.from.rank() as i8 - mov.to.rank() as i8).abs() == 2 {
+    //         let skipped_rank = (mov.from.rank() + mov.to.rank()) / 2;
+    //         self.en_passant = ChessSquare::from_coords(mov.from.file(), skipped_rank);
+    //     }
+    //
+    //     // Update Clocks
+    //     if moving_piece.piece_type == PieceType::Pawn || captured_piece.is_some() {
+    //         self.halfmove_clock = 0;
+    //     } else {
+    //         self.halfmove_clock += 1;
+    //     }
+    //
+    //     self.side_to_move = self.side_to_move.opposite();
+    //
+    //     // Hash global state
+    //     self.zobrist_hash ^= keys.castling[self.castling_rights.0 as usize];
+    //     if let Some(ep) = self.en_passant {
+    //         self.zobrist_hash ^= keys.en_passant[ep.file() as usize];
+    //     }
+    //
+    //     self.generate_pseudolegal();
+    //
+    //     debug_assert!(self.zobrist_hash == self.calculate_hash());
+    //     // this fails lol.
+    // }
 
     pub fn calculate_hash(&self) -> u64 {
         let mut hash = 0;
         let keys = ZobristKeys::get();
 
-        for sq_idx in 0..64 {
-            let sq = ChessSquare(sq_idx);
-            if let Some(piece) = self.chessboard.get_piece_at(sq) {
-                hash ^= keys.pieces[piece.color as usize][piece.piece_type as usize][sq_idx as usize];
-            }
-        }
-
+        // REMOVED the 0..64 loop. Only use the bitboard loop.
         for color in [Color::White, Color::Black] {
-            for piece_type in [
-                PieceType::Pawn,
-                PieceType::Knight,
-                PieceType::Bishop,
-                PieceType::Rook,
-                PieceType::Queen,
-                PieceType::King,
-            ] {
+            for piece_type in [PieceType::Pawn, PieceType::Knight, PieceType::Bishop, PieceType::Rook, PieceType::Queen, PieceType::King] {
                 let mut bb = self.chessboard.get_piece_bitboard(color, piece_type);
                 while let Some(sq) = bb.pop_lsb() {
                     hash ^= keys.pieces[color as usize][piece_type as usize][sq.0 as usize];
@@ -397,7 +418,6 @@ impl ChessPosition {
         hash
     }
 
-    // this is used by mcts, doesnt include 3 fold reptition
     pub fn check_game_state(&self, legal: bool) -> Outcome {
         // PseudoLegal and Legal Checks
         if self.halfmove_clock >= 100 {
@@ -412,7 +432,7 @@ impl ChessPosition {
             return Outcome::Finished(Some(Color::White));
         }
 
-        if legal {
+        if !legal {
             return Outcome::Unfinished;
         }
 
