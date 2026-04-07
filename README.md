@@ -1,26 +1,74 @@
 # Chess Engine
 
-A chess client and engine in about ~2000 lines. Client supports legal and pseudo-legal rule sets.
+A chess client and engine in about ~2500 lines. Client supports legal and pseudo-legal rule sets.
 
 ## Features
 
 *   **FEN String Parsing**: Boards can be loaded from Forsyth-Edwards Notation (FEN) strings.
 *   **Move Generation**: All standard chess moves can be generated for a given position and rule set.
-*   **Command-Line Interface**: A simple CLI to play a game of chess.
+*   **Command-Line Interface**: A simple CLI to train or run inference on models.
 
-## How to Run
 
-1.  Clone the repository:
+## How to build from source:
+
+1. Ensure the rust toolchain is installed:
+   ```bash
+   Linux/MacOS: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   Windows: Find the installer here: https://rustup.rs/#
+   ```
+
+2.  Clone the repository:
     ```bash
     git clone https://github.com/fqian1/chess-engine.git
     ```
-2.  Navigate to the project directory:
+
+3.  Navigate to the project directory:
     ```bash
     cd chess-engine
     ```
-3.  Run the application:
+
+4.  Optional: allow direnv (Nix only):
     ```bash
-    cargo run
+    direnv allow
+    ```
+This makes it 2% more likely the code will compile.
+
+5. If not on Nvidia, apply this diff to src/main.rs:
+```
+diff --git a/src/main.rs b/src/main.rs
+index e8a9f0c..4be7457 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -3,7 +3,7 @@
+ use std::io::{self, Write};
+ use std::path::PathBuf;
+
+-use burn::backend::{Autodiff, Cuda};
++use burn::backend::{Autodiff, Wgpu};
+ use burn::module::Module;
+ use burn::optim::AdamConfig;
+ use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
+@@ -57,13 +57,13 @@ fn main() {
+
+     let args = Args::parse();
+
+-    type MyInferenceBackend = Cuda<f32, i32>;
++    type MyInferenceBackend = Wgpu<f32, i32>;
+     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
+
+     let artifact_dir = args.path.clone();
+     let artifact_dir_str = args.path.to_str().unwrap_or("tmp/stats/");
+
+-    let device = burn::backend::cuda::CudaDevice::default();
++    let device = Default::default();
+
+     let mcts_config = MctsConfig { num_simulations: args.num_simulations, c_puct: args.c_puct, temperature: args.temperature, legal: args.legal };
+```
+
+
+5.  Run the application:
+    ```bash
+    cargo run -- -b 1 -n 20 -p "./tmp/stats"
     ```
 
 This is my undergrad cs fyp: custom chess client and chess engine
