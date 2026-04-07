@@ -1,7 +1,7 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
-use log::{info, trace};
+use log::trace;
 
 use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome};
 
