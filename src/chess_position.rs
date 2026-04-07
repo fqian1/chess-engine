@@ -226,10 +226,8 @@ impl ChessPosition {
         trace!("is_legal: checking move: {}", mov.to_uci());
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
-        let mut king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
-        let Some(king_sq) = king_bb.pop_lsb() else {
-            return false;
-        };
+        let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
+        let king_sq = king_bb.msb_square().unwrap();
 
         if temp_board.is_square_attacked(king_sq, self.side_to_move.opposite()) {
             return false;
@@ -239,7 +237,7 @@ impl ChessPosition {
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
-        let moving_piece = self.chessboard.get_piece_at(mov.from).expect("No piece at from sq");
+        let moving_piece = self.chessboard.get_piece_at(mov.from).expect(&format!("No piece at from sq {}\n{}",mov.from, self));
         let captured_piece = self.chessboard.get_piece_at(mov.to);
 
         let mut rights_to_remove = CastlingRights::empty();

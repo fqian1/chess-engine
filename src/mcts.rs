@@ -432,15 +432,14 @@ impl Mcts {
         };
 
         self.root = selected_edge.child_node_idx.expect("best edge doesnt have child");
-        let root_node = &self.node_arena[self.root];
         match root_node {
             MctsNode::PieceMove { from_sq, .. } => {
                 if let Some(piece_type) = selected_edge.promotion_piece {
-                    let hash = self.position_arena[root_node.get_data().chess_position_idx].zobrist_hash;
+                    let hash = self.position_arena[self.node_arena[self.root].get_data().chess_position_idx].zobrist_hash;
                     self.past_hashes.push(hash);
                     return Some(ChessMove::new(*from_sq, selected_edge.square, Some(piece_type)));
                 }
-                let hash = self.position_arena[root_node.get_data().chess_position_idx].zobrist_hash;
+                let hash = self.position_arena[self.node_arena[self.root].get_data().chess_position_idx].zobrist_hash;
                 self.past_hashes.push(hash);
                 return Some(ChessMove::new(*from_sq, selected_edge.square, None));
             }
@@ -449,25 +448,6 @@ impl Mcts {
             }
         }
     }
-
-    // pub fn get_move(&mut self) -> Option<ChessMove> {
-    //     let edge_idx = self.select_best_edge(self.root).expect("root node not expanded");
-    //     let edge = &self.edge_arena[edge_idx];
-    //
-    //     self.root = edge.child_node_idx.expect("best edge doesnt have child");
-    //     let node = &self.node_arena[edge.parent_node_idx];
-    //     match node {
-    //         MctsNode::PieceMove { from_sq, .. } => {
-    //             if let Some(piece_type) = edge.promotion_piece {
-    //                 return Some(ChessMove::new(*from_sq, edge.square, Some(piece_type)));
-    //             }
-    //             return Some(ChessMove::new(*from_sq, edge.square, None));
-    //         }
-    //         _ => {
-    //             return None;
-    //         }
-    //     }
-    // }
 }
 
 pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, config: &TrainingConfig, device: &B::Device) -> (u32, f64) {
@@ -518,6 +498,7 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             let start = game.edge_arena.len();
             let (policy, value) = (output.as_squares(), output.value);
             let node_to_expand = &mut game.node_arena[node_idx];
+            // info!("{}\nterminal: {}", position, node_to_expand.get_data().is_terminal);
             if node_to_expand.get_data().is_terminal {
                 // info!("expand_batch: terminal node, skipping expand");
                 return 0.0;
@@ -526,7 +507,6 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
 
             let rate: f64 = mask.iter().zip(policy.iter()).map(|(legal, policy)| if !legal { policy.1 as f64 } else { 0.0 }).sum();
 
-            info!("{}", position);
             // info!("\n{}", output);
 
             // todo! par iter this
