@@ -203,7 +203,7 @@ impl ChessPosition {
         if let Some(from_sq) = from_sq {
             assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
-                if self.is_legal(&mov) || !legal {
+                if !legal || self.is_legal(&mov) {
                     if from_sq == mov.from {
                         mask[mov.to.0 as usize] = true;
                     }
@@ -212,7 +212,7 @@ impl ChessPosition {
         } else {
             assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
-                if self.is_legal(&mov) || !legal {
+                if !legal || self.is_legal(&mov) {
                     mask[mov.from.0 as usize] = true;
                 }
             });
@@ -227,7 +227,9 @@ impl ChessPosition {
         temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
 
         let mut king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
-        let king_sq = king_bb.pop_lsb().expect("is_legal says: no king?");
+        let Some(king_sq) = king_bb.pop_lsb() else {
+            return false;
+        };
 
         if temp_board.is_square_attacked(king_sq, self.side_to_move.opposite()) {
             return false;

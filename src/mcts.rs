@@ -396,6 +396,10 @@ impl Mcts {
 
     pub fn get_move_to_play(&mut self) -> Option<ChessMove> {
         let root_node = &self.node_arena[self.root];
+        if root_node.get_data().is_terminal {
+            info!("root at node idx: {} is terminal", self.root);
+            return None;
+        }
         let (start, end) = root_node.get_data().child_edge_range.unwrap();
         let edges = &self.edge_arena[start..end];
 
@@ -428,6 +432,7 @@ impl Mcts {
         };
 
         self.root = selected_edge.child_node_idx.expect("best edge doesnt have child");
+        let root_node = &self.node_arena[self.root];
         match root_node {
             MctsNode::PieceMove { from_sq, .. } => {
                 if let Some(piece_type) = selected_edge.promotion_piece {
