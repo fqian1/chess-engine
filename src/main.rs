@@ -1,10 +1,41 @@
 #![recursion_limit = "256"]
 
-use burn::backend::{Autodiff, Wgpu};
+use std::io::{self, Write};
+use std::path::PathBuf;
+
+use burn::backend::{Autodiff, Cuda};
+use burn::module::Module;
 use burn::optim::AdamConfig;
+use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
 use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
+use clap::Parser;
 use env_logger::Builder;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value_t = 256)]
+    batch_size: usize,
+    #[arg(short, long)]
+    legal: bool,
+    #[arg(short, long)]
+    masked: bool,
+    #[arg(short, long, default_value_t = 1.25)]
+    c_puct: f32,
+    #[arg(short, long, default_value_t = 5)]
+    epochs: usize, // training iterations
+    #[arg(short, long, default_value_t = 1234)]
+    seed: u64,
+    #[arg(short, long, default_value_t = 800)]
+    num_simulations: usize, // mcts search count
+    #[arg(short, long, default_value_t = 20)]
+    iter_count: usize, // moves played / samples generated before training
+    #[arg(short, long, default_value_t = 1.0)]
+    temperature: f32,
+    #[arg(short, long, value_name = "DIR")]
+    path: PathBuf,
+}
 
 pub struct TrainingMetrics {
     pub epoch: u32,
@@ -47,17 +78,77 @@ fn main() {
 
     let training_config = TrainingConfig {
         model: model_config,
-        masked: true,
-        legal: true,
+        masked: args.masked,
+        legal: args.legal,
         optimizer: optimizer_config,
-        num_epochs: 100,
-        batch_size: 100,
+        num_epochs: args.epochs,
+        steps_per_iter: args.iter_count,
+        batch_size: args.batch_size,
         num_workers: 8,
-        seed: 1234,
+        seed: args.seed,
         learning_rate: 0.001,
     };
 
-    play::<MyAutodiffBackend>(&artifact_dir, &mcts_config, &training_config, &device);
+    loop {
+        println!("What do you want to do?\n1 - Train\n2 - Inference");
+        io::stdout().flush().unwrap();
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).expect("failed to read input");
+        input = input.trim().to_lowercase();
+        match input.as_str() {
+            "1" => {
+                println!("Using config: \n{:?}\n{:?}", training_config, mcts_config);
+                play::<MyAutodiffBackend>(&artifact_dir_str, &mcts_config, &training_config, &device);
+            }
+            "2" => {
+                println!("Enter fen string: ");
+                io::stdout().flush().unwrap();
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Failed to read input");
+                let game = ChessGame::from_fen(&input).unwrap_or_else(|_| {
+                    println!("Failed to parse fen, creating default game");
+                    ChessGame::default()
+                });
+                let _mcts = [Mcts::from_game(&game, 1000, mcts_config)];
+
+                println!("printing artifact dir: {:?}", artifact_dir.clone());
+
+                let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
+                let record = recorder.load(artifact_dir.clone(), &device).expect("Failed to load .mpk model record");
+
+                let model: ChessTransformer<MyInferenceBackend> = training_config.model.init(&device);
+                let model = model.load_record(record);
+
+                let mut training_config = training_config.clone();
+                training_config.batch_size = 1;
+
+                let inputs = vec![NetworkInputs::from_position(&game.position, None)];
+
+                let out = model_make_outputs(model.clone(), &inputs, &training_config, None, &device);
+
+                let sq = out[0].as_squares().into_iter().max_by(|&a, &b| {
+                    a.1.total_cmp(&b.1)
+                });
+
+                let sq = sq.unwrap().0;
+
+                let inputs = vec![NetworkInputs::from_position(&game.position, Some(&sq))];
+
+                let out = model_make_outputs(model.clone(), &inputs, &training_config, None, &device);
+
+                let sq2 = out[0].as_squares().into_iter().max_by(|&a, &b| {
+                    a.1.total_cmp(&b.1)
+                });
+                let sq2 = sq2.unwrap().0;
+
+                let mov = ChessMove::new(sq, sq2, None);
+
+                // this is just no mcts raw guess, doesnt handle promotions either
+                print!("\nI picked: {}\n", mov.to_uci());
+            }
+            _ => println!("Invalid - select {{1|2}}"),
+        }
+    }
 
     // loop {
     //     ChessGame::fen_to_ascii(&game.to_fen());
