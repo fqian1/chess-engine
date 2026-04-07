@@ -1,4 +1,5 @@
 use core::fmt;
+use log::info;
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator},
     slice::ParallelSliceMut,
@@ -327,7 +328,7 @@ impl Mcts {
         self.position_arena[self.node_arena[node_idx].get_data().chess_position_idx].clone()
     }
 
-    pub fn make_targets(&mut self) -> TrainingSample {
+    pub fn make_targets(&mut self) -> Option<TrainingSample> {
         let node = &self.node_arena[self.root];
         let position = &self.position_arena[node.get_data().chess_position_idx];
 
@@ -335,6 +336,10 @@ impl Mcts {
             MctsNode::PieceSelect { .. } => NetworkInputs::from_position(position, None),
             MctsNode::PieceMove { from_sq, .. } => NetworkInputs::from_position(position, Some(from_sq)),
         };
+
+        if node.get_data().child_edge_range.is_none() {
+            return None;
+        }
 
         let (start, end) = node.get_data().child_edge_range.unwrap();
         let total_visits: u32 = self.edge_arena[start..end].iter().map(|e| e.visits).sum();
@@ -344,7 +349,7 @@ impl Mcts {
         let best_edge_idx = (start..end).max_by(|a, b| self.edge_arena[*a].visits.cmp(&self.edge_arena[*b].visits)).unwrap();
         let best_edge = &self.edge_arena[best_edge_idx];
         let targets = NetworkLabels { policy: target_policy, value: best_edge.mean_value };
-        TrainingSample { inputs, targets }
+        Some(TrainingSample { inputs, targets })
     }
 
     pub fn traverse_get_terminal(&mut self) -> bool {
@@ -516,8 +521,10 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
 
             let rate: f64 = mask.iter().zip(policy.iter()).map(|(legal, policy)| if !legal { policy.1 as f64 } else { 0.0 }).sum();
 
+            info!("{}", position);
             // info!("\n{}", output);
 
+            // todo! par iter this
             mask.iter().zip(policy.iter()).for_each(|(legal, policy)| {
                 let (sq, score) = (policy.0, policy.1);
 

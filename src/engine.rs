@@ -170,15 +170,17 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     let sample = mcts.make_targets();
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
-                        // info!("\n{}", game.position);
-                        info!("Selected move: {}", &mov.to_uci());
+                        info!("\n------\n{}", game.position);
+                        info!("Selected move: {}\n------", &mov.to_uci());
                     };
                     sample
                 })
                 .collect();
 
             for sample in new_samples {
-                replay_buffer.push(sample);
+                if let Some(sample) = sample {
+                    replay_buffer.push(sample);
+                }
             }
 
             // info!("Replay Buffer size: {}", replay_buffer.buffer.len());
