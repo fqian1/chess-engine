@@ -69,13 +69,12 @@ fn main() {
     #[cfg(feature = "cuda")]
     pub type MyInferenceBackend = burn::backend::Cuda<f32, i32>;
 
-    #[cfg(not(feature = "cuda"))] 
+    #[cfg(not(feature = "cuda"))]
     pub type MyInferenceBackend = burn::backend::Wgpu<f32, i32>;
-
 
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
 
-    let artifact_dir_str = args.path.to_str().unwrap_or("tmp/stats/");
+    let artifact_dir_str = artifact_dir.to_str().unwrap_or("tmp/stats/");
 
     let device = Default::default();
 
@@ -112,6 +111,9 @@ fn main() {
         match input.as_str() {
             "1" => {
                 println!("Using config: \n{:?}\n{:?}", training_config, mcts_config);
+                println!("artifact dir: {:?}", artifact_dir_str);
+                println!("backend: {}", std::any::type_name::<MyInferenceBackend>());
+
                 play::<MyAutodiffBackend>(&artifact_dir_str, &mcts_config, &training_config, &device);
             }
             "2" => {
@@ -140,9 +142,7 @@ fn main() {
 
                 let out = model_make_outputs(model.clone(), &inputs, &training_config, None, &device);
 
-                let sq = out[0].as_squares().into_iter().max_by(|&a, &b| {
-                    a.1.total_cmp(&b.1)
-                });
+                let sq = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
 
                 let sq = sq.unwrap().0;
 
@@ -150,9 +150,7 @@ fn main() {
 
                 let out = model_make_outputs(model.clone(), &inputs, &training_config, None, &device);
 
-                let sq2 = out[0].as_squares().into_iter().max_by(|&a, &b| {
-                    a.1.total_cmp(&b.1)
-                });
+                let sq2 = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
                 let sq2 = sq2.unwrap().0;
 
                 let mov = ChessMove::new(sq, sq2, None);
