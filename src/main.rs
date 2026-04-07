@@ -23,11 +23,11 @@ struct Args {
     masked: bool,
     #[arg(short, long, default_value_t = 1.25)]
     c_puct: f32,
-    #[arg(short, long, default_value_t = 5)]
-    epochs: usize, // training iterations
+    #[arg(short, long, default_value_t = 80)]
+    epochs: usize, // gradient steps
     #[arg(short, long, default_value_t = 1234)]
     seed: u64,
-    #[arg(short, long, default_value_t = 800)]
+    #[arg(short, long, default_value_t = 200)]
     num_simulations: usize, // mcts search count
     #[arg(short, long, default_value_t = 20)]
     iter_count: usize, // moves played / samples generated before training
