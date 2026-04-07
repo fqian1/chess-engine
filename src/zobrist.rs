@@ -21,6 +21,13 @@ impl XorShift64 {
         self.value = x;
         x
     }
+
+    // 0.0 to 1.0
+    pub fn next_f32(&mut self) -> f32 {
+        let x = self.next();
+        let bits = ((x >> 41) as u32) | 0x3f800000;
+        f32::from_bits(bits) - 1.0
+    }
 }
 
 pub struct ZobristKeys {
