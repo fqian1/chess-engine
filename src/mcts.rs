@@ -290,6 +290,8 @@ impl Mcts {
                 let mut position = self.position_arena[parent_node.get_data().chess_position_idx].clone();
                 position.make_move(&mov);
 
+                let idx = (0..self.position_arena.len()).into_par_iter().find_any(|e| &self.position_arena[*e].zobrist_hash == &position.zobrist_hash);
+
                 let repeats = self.past_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count()
                     + path_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count();
 
@@ -300,8 +302,14 @@ impl Mcts {
                     position.check_game_state(self.config.legal)
                 };
 
-                self.position_arena.push(position);
-                let mut new_node = MctsNode::PieceSelect { data: NodeData::new(self.position_arena.len() - 1, edge_idx) };
+                let idx = if let Some(idx) = idx {
+                    idx
+                } else {
+                    self.position_arena.push(position);
+                    self.position_arena.len() - 1
+                };
+
+                let mut new_node = MctsNode::PieceSelect { data: NodeData::new(idx, edge_idx) };
                 if matches!(outcome, Outcome::Finished(_)) {
                     new_node.get_data_mut().is_terminal = true;
                     new_node.get_data_mut().value = Some(outcome.to_f32().unwrap());
