@@ -1,5 +1,6 @@
 use core::fmt;
 use log::info;
+use rand::distributions::{Distribution, Gamma};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator},
     slice::ParallelSliceMut,
@@ -193,9 +194,6 @@ impl Mcts {
 
             // contempt
             let mut exploitation = w - l - 0.05 * d;
-            if position.side_to_move == Color::Black {
-                exploitation *= -1.0;
-            }
 
             let mut prior = edge.confidence;
             if node_idx == self.root {
@@ -205,7 +203,7 @@ impl Mcts {
 
                 let noise = self.rng.next_f32();
 
-                prior = ((1.0 - noise_weight) * prior) + (prior * noise);
+                prior = (1.0 - noise_weight) * prior * noise + (noise_weight) * prior;
             }
 
             let exploration = prior * self.config.c_puct * ((visit_count as f32).sqrt() + 1e-8) / (1 + edge.visits) as f32;
@@ -240,16 +238,32 @@ impl Mcts {
         }
     }
 
-    pub fn backprop(&mut self, value: [f32; 3]) {
+    pub fn root_colour(&self) -> Color {
+        let pos = self.node_arena[self.root].get_data().chess_position_idx;
+        self.position_arena[pos].side_to_move
+    }
+
+    pub fn backprop(&mut self, mut value: [f32; 3]) {
+        let root_colour = self.root_colour();
         self.path.iter().for_each(|&idx| {
             let edge = &mut self.edge_arena[idx];
+
+            let parent = &self.node_arena[edge.parent_node_idx];
+            let position = &self.position_arena[parent.get_data().chess_position_idx];
+            let side_to_move = position.side_to_move;
+
+            if root_colour != side_to_move {
+                let temp = value[0];
+                value[0] = value[2];
+                value[2] = temp;
+            }
+
             edge.total_value[0] += value[0];
             edge.total_value[1] += value[1];
             edge.total_value[2] += value[2];
             edge.visits += 1;
-            edge.mean_value[0] = edge.total_value[0] / edge.visits as f32;
-            edge.mean_value[1] = edge.total_value[1] / edge.visits as f32;
-            edge.mean_value[2] = edge.total_value[2] / edge.visits as f32;
+            edge.mean_value =
+                [edge.total_value[0] / edge.visits as f32, edge.total_value[1] / edge.visits as f32, edge.total_value[2] / edge.visits as f32];
             self.node_arena[edge.parent_node_idx].get_data_mut().visits += 1;
         });
     }
@@ -290,7 +304,8 @@ impl Mcts {
                 let mut position = self.position_arena[parent_node.get_data().chess_position_idx].clone();
                 position.make_move(&mov);
 
-                let idx = (0..self.position_arena.len()).into_par_iter().find_any(|e| &self.position_arena[*e].zobrist_hash == &position.zobrist_hash);
+                let idx =
+                    (0..self.position_arena.len()).into_par_iter().find_any(|e| &self.position_arena[*e].zobrist_hash == &position.zobrist_hash);
 
                 let repeats = self.past_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count()
                     + path_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count();
@@ -338,25 +353,29 @@ impl Mcts {
 
     pub fn make_targets(&mut self) -> Option<TrainingSample> {
         let node = &self.node_arena[self.root];
-        let position = &self.position_arena[node.get_data().chess_position_idx];
+        let Some((start, end)) = node.get_data().child_edge_range else {
+            return None;
+        };
 
+        let position = &self.position_arena[node.get_data().chess_position_idx];
         let inputs = match node {
             MctsNode::PieceSelect { .. } => NetworkInputs::from_position(position, None),
             MctsNode::PieceMove { from_sq, .. } => NetworkInputs::from_position(position, Some(from_sq)),
         };
 
-        if node.get_data().child_edge_range.is_none() {
-            return None;
-        }
-
-        let (start, end) = node.get_data().child_edge_range.unwrap();
         let total_visits: u32 = self.edge_arena[start..end].iter().map(|e| e.visits).sum();
         let mut target_policy = [0.0; 64];
         self.edge_arena[start..end].iter().for_each(|e| target_policy[e.square.0 as usize] += e.visits as f32 / total_visits as f32);
 
-        let best_edge_idx = (start..end).max_by(|a, b| self.edge_arena[*a].visits.cmp(&self.edge_arena[*b].visits)).unwrap();
-        let best_edge = &self.edge_arena[best_edge_idx];
-        let targets = NetworkLabels { policy: target_policy, value: best_edge.mean_value };
+        let mut root_value = [0.0; 3];
+        for edge in &self.edge_arena[start..end] {
+            let weight = edge.visits as f32 / total_visits as f32;
+            root_value[0] += edge.mean_value[0] * weight;
+            root_value[1] += edge.mean_value[1] * weight;
+            root_value[2] += edge.mean_value[2] * weight;
+        }
+
+        let targets = NetworkLabels { policy: target_policy, value: root_value };
         Some(TrainingSample { inputs, targets })
     }
 
@@ -504,7 +523,7 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             let node_idx = game.node_to_expand().expect("path is None");
             let position = &game.get_position(node_idx);
             let start = game.edge_arena.len();
-            let (policy, value) = (output.as_squares(), output.value);
+            let (mut policy, value) = (output.as_squares(), output.value);
             let node_to_expand = &mut game.node_arena[node_idx];
             // info!("{}\nterminal: {}", position, node_to_expand.get_data().is_terminal);
             if node_to_expand.get_data().is_terminal {
@@ -517,7 +536,18 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
 
             // info!("\n{}", output);
 
-            // todo! par iter this
+            if !config.masked {
+                // normalise policy distribution if unmasked
+                policy.iter_mut().for_each(|e| e.1 = e.1 / (1.0 - rate) as f32);
+            }
+
+            if node_idx == game.root {
+                let alpha = 0.3;
+                let gamma = Gamma::new(alpha, 1.0).unwrap();
+                let rng = game.rng.next_f32();
+            };
+
+            // TODO! par iter this
             mask.iter().zip(policy.iter()).for_each(|(legal, policy)| {
                 let (sq, score) = (policy.0, policy.1);
 
