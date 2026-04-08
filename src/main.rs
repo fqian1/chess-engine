@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use burn::backend::Autodiff;
 use burn::module::Module;
-use burn::optim::AdamConfig;
+use burn::optim::AdamWConfig;
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
 use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
@@ -43,7 +43,7 @@ pub struct TrainingMetrics {
     pub total_moves_generated: u32,
     pub average_loss: u32,
     pub average_game_length: u32,
-    pub unique_positions_seen: u32,
+    pub unique_positions_seen: f32,
 }
 
 pub fn display_moves(moves: &Vec<ChessMove>) {
@@ -87,7 +87,7 @@ fn main() {
     let d_ff = 4 * d_model;
 
     let model_config = ChessTransformerConfig::new(d_model, n_heads, d_ff, n_layers);
-    let optimizer_config = AdamConfig::new();
+    let optimizer_config = AdamWConfig::new();
 
     let training_config = TrainingConfig {
         model: model_config,
@@ -99,7 +99,7 @@ fn main() {
         batch_size: args.batch_size,
         num_workers: 8,
         seed: args.seed,
-        learning_rate: 0.001,
+        learning_rate: 0.0005,
     };
 
     loop {

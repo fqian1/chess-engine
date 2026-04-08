@@ -5,8 +5,8 @@ use burn::{
     Tensor,
     config::Config,
     module::{AutodiffModule, Module},
-    optim::{Adam, AdamConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
-    prelude::Backend,
+    optim::{AdamW, AdamWConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
+    prelude::{Backend, ToElement},
     record::{FullPrecisionSettings, NamedMpkFileRecorder},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
@@ -33,7 +33,7 @@ pub struct TrainingConfig {
     pub model: ChessTransformerConfig,
     pub masked: bool,
     pub legal: bool,
-    pub optimizer: AdamConfig,
+    pub optimizer: AdamWConfig,
     #[config(default = 5)]
     pub num_epochs: usize,
     #[config(default = 1024)]
@@ -123,7 +123,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
     let csv_path = format!("{}/metrics.csv", artifact_dir);
     let mut csv_file = OpenOptions::new().create(true).append(true).open(&csv_path).unwrap();
     if std::fs::metadata(&csv_path).unwrap().len() == 0 {
-        writeln!(csv_file, "iteration,avg_loss,avg_game_length,unique_positions,avg_illegal_prob").unwrap();
+        writeln!(csv_file, "iteration,avg_loss,avg_game_length,nodes_expanded,avg_illegal_prob").unwrap();
     }
 
     let mut iterations = 0;
@@ -216,7 +216,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 
 pub fn train<B: AutodiffBackend>(
     model: ChessTransformer<B>,
-    optimizer: &mut OptimizerAdaptor<Adam, ChessTransformer<B>, B>,
+    optimizer: &mut OptimizerAdaptor<AdamW, ChessTransformer<B>, B>,
     config: &TrainingConfig,
     games: &ReplayBuffer,
     device: &B::Device,
@@ -228,6 +228,6 @@ pub fn train<B: AutodiffBackend>(
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
 
-    let loss_val = loss.clone().into_data().to_vec::<f32>().unwrap()[0];
+    let loss_val = loss.clone().into_scalar().to_f32();
     (optimizer.step(config.learning_rate, model.clone(), grads), loss_val)
 }

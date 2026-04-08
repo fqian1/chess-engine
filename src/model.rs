@@ -108,7 +108,7 @@ impl<B: Backend> ChessTransformer<B> {
             value_pred.clone(),
             batch.policy_targets.clone(),
             batch.value_targets.clone(),
-            0.7,
+            0.8,
         );
         let target_indices = batch.policy_targets.argmax(1).reshape([batch_size]);
         ClassificationOutput::new(loss, policy_pred, target_indices)
