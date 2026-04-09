@@ -4,7 +4,8 @@ use burn::{
     data::dataloader::batcher::Batcher,
     tensor::{Tensor, TensorData, backend::Backend},
 };
-use rand::{rngs::SmallRng, seq::IndexedRandom};
+use log::info;
+use rand::{RngExt, rngs::SmallRng, seq::IndexedRandom};
 
 use crate::{ChessPosition, ChessSquare, Color};
 
@@ -25,11 +26,15 @@ impl fmt::Display for NetworkLabels {
         let mut output = String::new();
         for i in 0..8 {
             for j in 0..8 {
-                output.push_str(&format!("{:.4} ", &self.policy[i * 8 + j].to_string()));
+                let val = self.policy[i * 8 + j];
+                let formatted = format!("{:.1}", val);
+
+                output.push_str(formatted.trim_start_matches('0'));
+                output.push(' ');
             }
             output.push('\n');
         }
-        output.push_str(&format!("{:?}", self.value));
+        output.push_str(&format!("\n{:?}", self.value));
         write!(f, "{}", output)
     }
 }
@@ -179,6 +184,8 @@ impl ReplayBuffer {
             // TODO
             panic!("not enough food in buffer");
         }
+
+        info!("sampling: {}", self.buffer[rng.random_range(0..self.buffer.len())].targets);
         let samples: Vec<TrainingSample> = self.buffer.sample(rng, batch_size).cloned().collect();
         let batcher = ChessBatcher {};
         batcher.batch(samples, device)
