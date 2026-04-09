@@ -203,8 +203,8 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
             .unwrap();
         csv_file.flush().unwrap();
 
-        if iterations % 10 == 0 {
-            let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 10);
+        if iterations % 25 == 0 {
+            let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 25);
             info!("Saving model snapshot at: {}", &snapshot_path);
             if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
                 println!("failed to save model: {}", err);
