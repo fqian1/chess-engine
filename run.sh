@@ -21,16 +21,16 @@ quick|q)
     ./target/release/chess-engine -p "./tmp" -b 8 -n 80 -i 8 -e 40
     ;;
 legal_masked|lm)
-    ./target/release/chess-engine -l -m -p "/scratch/fq00038-legal_masked/"
+    ./target/release/chess-engine -l -m -p "./tmp/legal_masked/"
     ;;
 legal_unmasked|lu)
-    ./target/release/chess-engine -l -p "/scratch/fq00038-legal_unmasked/"
+    ./target/release/chess-engine -l -p "./tmp/legal_unmasked/"
     ;;
 pseudo_legal_masked|pm)
-    ./target/release/chess-engine -m -p "/scratch/fq0038-pseudo_legal_masked/"
+    ./target/release/chess-engine -m -p "./tmp/pseudo_masked/"
     ;;
 pseudo_legal_unmasked|pu)
-    ./target/release/chess-engine -p "/scratch/fq00038-pseudo_legal_unmasked/"
+    ./target/release/chess-engine -p "./tmp/pseudo_unmasked/"
     ;;
 *)
     echo "Usage: $0 {test|t|debug|d|run|r}"
