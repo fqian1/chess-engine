@@ -417,6 +417,9 @@ impl Mcts {
 
     pub fn add_dirichlet_noise(&mut self, node_idx: usize) {
         let node = &self.node_arena[node_idx];
+        if node.get_data().is_terminal {
+            return;
+        }
         let (start, end) = node.get_data().child_edge_range.expect("node not expanded");
 
         let alpha = 0.3;
@@ -582,7 +585,6 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                     }
                 }
             });
-
 
             let end = game.edge_arena.len();
             assert!(end - start != 0);
