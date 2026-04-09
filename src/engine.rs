@@ -2,13 +2,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 use burn::{
-    Tensor,
-    config::Config,
-    module::{AutodiffModule, Module},
-    optim::{AdamW, AdamWConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
-    prelude::{Backend, ToElement},
-    record::{FullPrecisionSettings, NamedMpkFileRecorder},
-    tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
+    Tensor, config::Config, lr_scheduler::{LrScheduler, noam::{NoamLrScheduler, NoamLrSchedulerConfig}}, module::{AutodiffModule, Module}, optim::{AdamW, AdamWConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor}, prelude::{Backend, ToElement}, record::{FullPrecisionSettings, NamedMpkFileRecorder}, tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend}
 };
 use log::info;
 use rand::{SeedableRng, rngs::SmallRng};
@@ -33,6 +27,7 @@ pub struct TrainingConfig {
     pub model: ChessTransformerConfig,
     pub masked: bool,
     pub legal: bool,
+    pub scheduler: NoamLrSchedulerConfig,
     pub optimizer: AdamWConfig,
     #[config(default = 5)]
     pub num_epochs: usize,
@@ -114,6 +109,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 
     let mut model: ChessTransformer<B> = training_config.model.init(device);
     let mut replay_buffer = ReplayBuffer::new(256000);
+    let mut lr_scheduler = training_config.scheduler.init().unwrap();
     let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
     let mut games = vec![ChessGame::default(); training_config.batch_size];
     let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(&game, 1024, *mcts_config)).collect();
@@ -190,7 +186,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         let mut loss_val: f32 = 0.0;
         for epoch in 0..training_config.num_epochs {
             info!("Training model: epoch {}", epoch);
-            let (new_model, val) = train(model.clone(), &mut optimizer, &training_config, &replay_buffer, device, &mut rng);
+            let (new_model, val) = train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, &mut rng);
             model = new_model;
             loss_val += val;
         }
@@ -218,17 +214,21 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 pub fn train<B: AutodiffBackend>(
     model: ChessTransformer<B>,
     optimizer: &mut OptimizerAdaptor<AdamW, ChessTransformer<B>, B>,
+    scheduler: &mut NoamLrScheduler,
     config: &TrainingConfig,
     games: &ReplayBuffer,
     device: &B::Device,
     rng: &mut SmallRng,
 ) -> (ChessTransformer<B>, f32) {
     let datas: ChessBatch<B> = games.sample_batch(config.batch_size, rng, device);
+    let lr = scheduler.step();
+
     let output = model.forward_classification(datas);
     let loss = output.loss;
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
 
+
     let loss_val = loss.clone().into_scalar().to_f32();
-    (optimizer.step(config.learning_rate, model.clone(), grads), loss_val)
+    (optimizer.step(lr, model.clone(), grads), loss_val)
 }

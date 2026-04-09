@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use burn::backend::Autodiff;
+use burn::lr_scheduler::noam::NoamLrSchedulerConfig;
 use burn::module::Module;
 use burn::optim::AdamWConfig;
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
@@ -88,11 +89,13 @@ fn main() {
 
     let model_config = ChessTransformerConfig::new(d_model, n_heads, d_ff, n_layers);
     let optimizer_config = AdamWConfig::new();
+    let scheduler_config = NoamLrSchedulerConfig::new(0.0001);
 
     let training_config = TrainingConfig {
         model: model_config,
         masked: args.masked,
         legal: args.legal,
+        scheduler: scheduler_config,
         optimizer: optimizer_config,
         num_epochs: args.epochs,
         steps_per_iter: args.iter_count,
