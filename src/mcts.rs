@@ -448,7 +448,7 @@ impl Mcts {
 
         let ply_count = self.past_hashes.len();
         let piece_count = self.position_arena[self.node_arena[self.root].get_data().chess_position_idx].chessboard.all_pieces.count();
-        let temperature = self.config.temperature * ((1.0 / (ply_count + 1) as f32 + (piece_count - 4) as f32 / 28.0) / 2.0);
+        let temperature = self.config.temperature * ((1.0 / (ply_count + 1) as f32 + (piece_count - 2) as f32 / 30.0) / 2.0);
 
         let selected_edge = if self.config.temperature > 0.0 {
             let inv_temp = 1.0 / temperature;
