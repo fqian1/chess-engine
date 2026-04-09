@@ -1,6 +1,7 @@
 use core::fmt;
 use log::info;
-use rand::distributions::{Distribution, Gamma};
+use rand::rngs::SmallRng;
+use rand_distr::{Distribution, Gamma};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator},
     slice::ParallelSliceMut,
@@ -183,31 +184,18 @@ impl Mcts {
 
     pub fn select_best_edge(&mut self, node_idx: usize) -> Option<usize> {
         let node = &self.node_arena[node_idx];
-        let position = &self.position_arena[node.get_data().chess_position_idx];
-
         let (start, end) = node.get_data().child_edge_range?;
         let visit_count = node.get_data().visits;
 
-        let mut calc_puct = |edge_idx: usize| -> f32 {
+        let calc_puct = |edge_idx: usize| -> f32 {
             let edge = &self.edge_arena[edge_idx];
             let (w, d, l) = (edge.mean_value[0], edge.mean_value[1], edge.mean_value[2]);
 
             // contempt
-            let mut exploitation = w - l - 0.05 * d;
-
-            let mut prior = edge.confidence;
-            if node_idx == self.root {
-                let pos_idx = &self.node_arena[self.root].get_data().chess_position_idx;
-                // scale noise by pieces on board
-                let noise_weight = 0.5 - (self.position_arena[*pos_idx].chessboard.all_pieces.count() as f32 / 40.0);
-
-                let noise = self.rng.next_f32();
-
-                prior = (1.0 - noise_weight) * prior * noise + (noise_weight) * prior;
-            }
+            let exploitation = w - l - 0.05 * d;
+            let prior = edge.confidence;
 
             let exploration = prior * self.config.c_puct * ((visit_count as f32).sqrt() + 1e-8) / (1 + edge.visits) as f32;
-            // info!("node visit count: {}, edge visits: {}", visit_count, edge.visits);
             exploitation + exploration
         };
 
@@ -217,10 +205,6 @@ impl Mcts {
             a.total_cmp(&b)
         });
 
-        // (start..end).for_each(|x| {
-        //     let conf = self.edge_arena[x].confidence;
-        //     info!("edge_idx: {}, confidence: {}, puct: {}", x, conf, calc_puct(x));
-        // });
         idx
     }
 
@@ -311,6 +295,7 @@ impl Mcts {
                     + path_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count();
 
                 // info!("add_leaf: position ({}) repeated {} times", self.position_arena.len(), repeats);
+                let side_to_move = position.side_to_move;
                 let outcome = if repeats >= 2 {
                     Outcome::Finished(None)
                 } else {
@@ -325,10 +310,19 @@ impl Mcts {
                 };
 
                 let mut new_node = MctsNode::PieceSelect { data: NodeData::new(idx, edge_idx) };
-                if matches!(outcome, Outcome::Finished(_)) {
+
+                if let Outcome::Finished(winner) = outcome {
+                    let value = match (winner, side_to_move) {
+                        (Some(Color::White), Color::White) => [1.0, 0.0, 0.0],
+                        (Some(Color::White), Color::Black) => [0.0, 0.0, 1.0],
+                        (Some(Color::Black), Color::White) => [0.0, 0.0, 1.0],
+                        (Some(Color::Black), Color::Black) => [1.0, 0.0, 0.0],
+                        (None, _) => [0.0, 1.0, 0.0],
+                    };
+                    new_node.get_data_mut().value = Some(value);
                     new_node.get_data_mut().is_terminal = true;
-                    new_node.get_data_mut().value = Some(outcome.to_f32().unwrap());
                 }
+
                 self.node_arena.push(new_node);
 
                 let node_idx = self.node_arena.len() - 1;
@@ -419,6 +413,25 @@ impl Mcts {
                 return self.position_arena[data.chess_position_idx].make_mask(self.config.legal, Some(*from_sq));
             }
         }
+    }
+
+    pub fn add_dirichlet_noise(&mut self, node_idx: usize) {
+        let node = &self.node_arena[node_idx];
+        let (start, end) = node.get_data().child_edge_range.expect("node not expanded");
+
+        let alpha = 0.3;
+        let epsilon = 0.25;
+        let gamma = Gamma::new(alpha, 1.0).unwrap();
+        let mut rng: SmallRng = rand::make_rng();
+
+        let noise: Vec<f32> = self.edge_arena[start..end].iter().map(|_| gamma.sample(&mut rng) as f32).collect();
+
+        let total_noise: f32 = noise.iter().sum();
+
+        self.edge_arena[start..end].iter_mut().enumerate().for_each(|(i, e)| {
+            let n = noise[i] / total_noise;
+            e.confidence = (1.0 - epsilon) * e.confidence + epsilon * n;
+        });
     }
 
     pub fn get_move_to_play(&mut self) -> Option<ChessMove> {
@@ -524,7 +537,7 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             let position = &game.get_position(node_idx);
             let start = game.edge_arena.len();
             let (mut policy, value) = (output.as_squares(), output.value);
-            let node_to_expand = &mut game.node_arena[node_idx];
+            let node_to_expand = &game.node_arena[node_idx];
             // info!("{}\nterminal: {}", position, node_to_expand.get_data().is_terminal);
             if node_to_expand.get_data().is_terminal {
                 // info!("expand_batch: terminal node, skipping expand");
@@ -540,12 +553,6 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                 // normalise policy distribution if unmasked
                 policy.iter_mut().for_each(|e| e.1 = e.1 / (1.0 - rate) as f32);
             }
-
-            if node_idx == game.root {
-                let alpha = 0.3;
-                let gamma = Gamma::new(alpha, 1.0).unwrap();
-                let rng = game.rng.next_f32();
-            };
 
             // TODO! par iter this
             mask.iter().zip(policy.iter()).for_each(|(legal, policy)| {
@@ -575,14 +582,21 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                     }
                 }
             });
+
+
             let end = game.edge_arena.len();
             assert!(end - start != 0);
 
             // info!("path: {:?}", game.path.iter().map(|&x| game.edge_arena[x].clone()).collect::<Vec<MctsEdge>>());
 
             // update node
+            let node_to_expand = &mut game.node_arena[node_idx];
             node_to_expand.get_data_mut().child_edge_range = Some((start, end));
             node_to_expand.get_data_mut().value = Some(value);
+            // extra case just for idx 0
+            if node_idx == 0 {
+                game.add_dirichlet_noise(node_idx);
+            }
             game.backprop(value);
             game.path = Vec::new();
             rate

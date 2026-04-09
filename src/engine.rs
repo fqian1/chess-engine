@@ -173,6 +173,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                         info!("\n------\n{}", game.position);
                         info!("Selected move: {}\n------", &mov.to_uci());
                     };
+                    mcts.add_dirichlet_noise(mcts.root);
                     sample
                 })
                 .collect();
