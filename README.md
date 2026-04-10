@@ -12,8 +12,7 @@ A chess client and engine in about ~2500 lines. Client supports legal and pseudo
 ## How to build from source:
 
 1. Ensure the rust toolchain is installed:
-   ```bash
-   Linux/MacOS: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   Linux/MacOS: ```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```
    Windows: Find the installer here: https://rustup.rs/#
    ```
 
@@ -32,39 +31,6 @@ A chess client and engine in about ~2500 lines. Client supports legal and pseudo
     direnv allow
     ```
 This makes it 2% more likely the code will compile.
-
-5. If not on Nvidia, apply this diff to src/main.rs:
-```
-diff --git a/src/main.rs b/src/main.rs
-index e8a9f0c..4be7457 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -3,7 +3,7 @@
- use std::io::{self, Write};
- use std::path::PathBuf;
-
--use burn::backend::{Autodiff, Cuda};
-+use burn::backend::{Autodiff, Wgpu};
- use burn::module::Module;
- use burn::optim::AdamConfig;
- use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
-@@ -57,13 +57,13 @@ fn main() {
-
-     let args = Args::parse();
-
--    type MyInferenceBackend = Cuda<f32, i32>;
-+    type MyInferenceBackend = Wgpu<f32, i32>;
-     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
-
-     let artifact_dir = args.path.clone();
-     let artifact_dir_str = args.path.to_str().unwrap_or("tmp/stats/");
-
--    let device = burn::backend::cuda::CudaDevice::default();
-+    let device = Default::default();
-
-     let mcts_config = MctsConfig { num_simulations: args.num_simulations, c_puct: args.c_puct, temperature: args.temperature, legal: args.legal };
-```
-
 
 5.  Run the application:
     ```bash
@@ -95,17 +61,11 @@ B. Logit Masking vs. Punishment (Mechanics "Grokking")
 - MCTS Implications: Doubles tree depth, but reduces model action space.
 - Both heads use softmax activation, kl divergence loss.
 
-3. Endgame Table Base Injection Scheduling
--------------------------------------------------------------------------------
-Test three distinct EGTB perfect knowledge injection strategies.
-   - Schedule 1 (Bootstrap): Inject at the beginning - perfect knowledge bootstraps value head, comes with risk of forgetting/overfitting.
-   - Schedule 2 (Balanced): Inject evenly throughout the entire training pipeline.
-   - Schedule 3 (Late-Stage): Inject near the end of training - aligns with chronological order of learning, comes with risk of catastrophic forgetting.
-
 4. Bespoke Client and Engine Implementation
 -------------------------------------------------------------------------------
 - Board Representation: Bitboards.
 - Move Generation: Pseudo-legal and legal generators.
+- Bipartite MCTS for piece -> destination.
 - Language/Stack: rust, burn, rand, rayon.
 
 5. Deliverables and Metrics
