@@ -83,7 +83,7 @@ impl NetworkInputs {
         }
 
         if let Some(square) = selected_sq {
-            data[832 + square.0 as usize] = 1.0;
+            data[832 + if position.side_to_move == Color::Black {square.square_opposite().0 as usize} else {square.0 as usize}] = 1.0;
         }
 
         let mut meta = [0f32; 5];
