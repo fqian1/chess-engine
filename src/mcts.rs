@@ -369,6 +369,17 @@ impl Mcts {
             root_value[2] += edge.mean_value[2] * weight;
         }
 
+        if position.side_to_move == Color::Black {
+            let mut flipped_policy = [0.0; 64];
+
+            for i in 0..8 {
+                let other = 7 - i;
+                flipped_policy[(i * 8)..(i * 8 + 8)].copy_from_slice(&target_policy[(other * 8)..(other * 8 + 8)]);
+            }
+
+            target_policy = flipped_policy;
+        }
+
         let targets = NetworkLabels { policy: target_policy, value: root_value };
         Some(TrainingSample { inputs, targets })
     }
@@ -476,7 +487,7 @@ impl Mcts {
 
         self.root = selected_edge.child_node_idx.expect("best edge doesnt have child");
         match root_node {
-            MctsNode::PieceMove { from_sq, .. } => {
+            MctsNode::PieceMove { from_sq, data } => {
                 if let Some(piece_type) = selected_edge.promotion_piece {
                     let hash = self.position_arena[self.node_arena[self.root].get_data().chess_position_idx].zobrist_hash;
                     self.past_hashes.push(hash);
@@ -510,14 +521,32 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             }
             unique += 1;
 
+            let flip_mask = |mask: [bool; 64]| {
+                let mut flipped_mask = [false; 64];
+
+                for i in 0..8 {
+                    let other = 7 - i;
+                    flipped_mask[(i * 8)..(i * 8 + 8)].copy_from_slice(&mask[(other * 8)..(other * 8 + 8)]);
+                }
+                flipped_mask
+            };
+
             let position_idx = node.get_data().chess_position_idx;
             let position = &game.position_arena[position_idx];
             match node {
                 MctsNode::PieceSelect { .. } => {
-                    return position.make_mask(config.legal, None);
+                    let mut mask = position.make_mask(config.legal, None);
+                    if position.side_to_move == Color::Black {
+                        mask = flip_mask(mask);
+                    };
+                    return mask;
                 }
                 MctsNode::PieceMove { from_sq, .. } => {
-                    return position.make_mask(config.legal, Some(*from_sq));
+                    let mut mask = position.make_mask(config.legal, Some(*from_sq));
+                    if position.side_to_move == Color::Black {
+                        mask = flip_mask(mask);
+                    }
+                    return mask;
                 }
             }
         })
@@ -558,12 +587,15 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             }
 
             // TODO! par iter this
-            mask.iter().zip(policy.iter()).for_each(|(legal, policy)| {
-                let (sq, score) = (policy.0, policy.1);
+            mask.into_iter().zip(policy.into_iter()).for_each(|(legal, policy)| {
+                let (mut sq, score) = (policy.0, policy.1);
 
-                if *legal {
+                if legal {
                     match node_to_expand {
-                        MctsNode::PieceMove { data: _, from_sq } => {
+                        MctsNode::PieceMove { from_sq, .. } => {
+                            if position.side_to_move == Color::Black {
+                                sq = sq.square_opposite();
+                            };
                             let mov = ChessMove::new(*from_sq, sq, None);
                             if let Some(moves) = position.expand_if_prom(mov) {
                                 for mov in moves {
@@ -577,7 +609,10 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                                 game.edge_arena.push(edge);
                             }
                         }
-                        MctsNode::PieceSelect { data: _ } => {
+                        MctsNode::PieceSelect { .. } => {
+                            if position.side_to_move == Color::Black {
+                                sq = sq.square_opposite();
+                            }
                             let edge = MctsEdge::new(sq, score, node_idx);
                             // info!("adding edge: {}", edge);
                             game.edge_arena.push(edge);
