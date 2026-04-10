@@ -142,7 +142,7 @@ impl ChessSquare {
     pub fn square_opposite(&self) -> ChessSquare {
         let rank = self.rank();
         let file = self.file();
-        let flipped_rank = 8 - rank;
+        let flipped_rank = 7 - rank;
         ChessSquare::from_coords(file, flipped_rank).unwrap()
     }
 
