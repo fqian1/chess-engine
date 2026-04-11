@@ -823,6 +823,7 @@ dependencies = [
  "env_logger",
  "log",
  "rand 0.10.0",
+ "rand_distr 0.6.0",
  "rayon",
 ]
 

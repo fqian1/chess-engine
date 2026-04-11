@@ -1,13 +1,15 @@
 # Chess Engine
 
-A chess client and engine in about ~2500 lines. Client supports legal and pseudo-legal rule sets.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+This is my undergrad fyp:
+A chess client and mcts powered engine in about ~2500 lines.
 
 ## Features
 
-*   **FEN String Parsing**: Boards can be loaded from Forsyth-Edwards Notation (FEN) strings.
-*   **Move Generation**: All standard chess moves can be generated for a given position and rule set.
-*   **Command-Line Interface**: A simple CLI to train or run inference on models.
-
+*   **FEN String Parsing**: load chess game from fen strings
+*   **Move Generation**: generate pseudolegal moves for a given position then filter for legality
+*   **Command-Line Interface**: A simple CLI to train your own model and then run inference on it
 
 ## How to build from source:
 
@@ -34,10 +36,11 @@ This makes it 2% more likely the code will compile.
 
 5.  Run the application:
     ```bash
-    cargo run -- -b 1 -n 20 -p "./tmp/stats"
+    cargo run -- -batch_size 1 -legal -masked -n 20 -e 20 -i 3 -path "./tmp"
     ```
+Run with the -h flag to see options
 
-This is my undergrad cs fyp: custom chess client and chess engine
+Distributed under the MIT License. See LICENSE for more information.
 
 1. Hypothesis and Experiments
 -------------------------------------------------------------------------------
@@ -61,15 +64,9 @@ B. Logit Masking vs. Punishment (Mechanics "Grokking")
 - MCTS Implications: Doubles tree depth, but reduces model action space.
 - Both heads use softmax activation, kl divergence loss.
 
-4. Bespoke Client and Engine Implementation
+3. Bespoke Client and Engine Implementation
 -------------------------------------------------------------------------------
 - Board Representation: Bitboards.
 - Move Generation: Pseudo-legal and legal generators.
 - Bipartite MCTS for piece -> destination.
 - Language/Stack: rust, burn, rand, rayon.
-
-5. Deliverables and Metrics
--------------------------------------------------------------------------------
-- Training statistics (Loss curves, ELO progression, illegal move frequency).
-- Model snapshots at defined epochs for all experimental branches.
-- Comparative analysis: Masked vs. Unmasked, Legal vs. Pseudo-Legal, EGTB schedules.
