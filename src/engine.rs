@@ -182,7 +182,12 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                         info!("\n------\n{}", game.position);
                         info!("Selected move: {}\n------", &mov.to_uci());
                     };
-                    let draw_threshold = 0.5 + (1.0 / (game.game_history.len() as f32 + 1.0)) * 0.5;
+                    // scale draw threshold down after 60 moves
+                    let draw_threshold = if game.game_history.len() > 40 {
+                        0.7 + (1.0 / ((game.game_history.len() - 40) as f32))
+                    } else {
+                        0.95
+                    };
                     if sample.1[1] > draw_threshold {
                         // sample.1 is root value after search, just restart. starts at 1, down to
                         // 0.5 certain of draw at 200 moves
@@ -220,8 +225,8 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
             iterations,
             loss_val,
             average_game_length / (game_over_count[0] + game_over_count[1]),
-            game_over_count[1],
             game_over_count[0],
+            game_over_count[1],
             positions_expanded,
             avg_illegal_prob
         )
