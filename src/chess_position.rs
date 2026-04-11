@@ -237,7 +237,7 @@ impl ChessPosition {
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
-        let moving_piece = self.chessboard.get_piece_at(mov.from).expect(&format!("No piece at from sq {}\n{}",mov.from, self));
+        let moving_piece = self.chessboard.get_piece_at(mov.from).expect(&format!("No piece at from sq {}\n{}", mov.from, self));
         let captured_piece = self.chessboard.get_piece_at(mov.to);
 
         let mut rights_to_remove = CastlingRights::empty();
@@ -419,12 +419,10 @@ impl ChessPosition {
     }
 
     pub fn check_game_state(&self, legal: bool) -> Outcome {
-        // PseudoLegal and Legal Checks
-        if self.halfmove_clock >= 100 {
+        // pseudolegal checks
+        if self.halfmove_clock >= 80 {
             return Outcome::Finished(None);
         }
-
-        // King capture
         if self.chessboard.get_piece_bitboard(Color::White, PieceType::King).is_empty() {
             return Outcome::Finished(Some(Color::Black));
         }
@@ -432,32 +430,23 @@ impl ChessPosition {
             return Outcome::Finished(Some(Color::White));
         }
 
-        if !legal {
-            return Outcome::Unfinished;
-        }
-
+        // if !legal {
+        //     return Outcome::Unfinished;
+        // }
+        //
         // Legal Checks
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
         let king_sq = king_bb.pop_lsb().unwrap();
 
-        if !self.pseudolegal_moves.iter().any(|&mov| self.is_legal(&mov)) {
-            if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
-                return Outcome::Finished(Some(self.side_to_move.opposite()));
-            } else {
-                return Outcome::Finished(None);
+        if legal {
+            if !self.pseudolegal_moves.iter().any(|&mov| self.is_legal(&mov)) {
+                if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
+                    return Outcome::Finished(Some(self.side_to_move.opposite()));
+                } else {
+                    return Outcome::Finished(None);
+                }
             }
         }
-
-        // is this redundant
-        self.pseudolegal_moves.iter().any(|&mov| {
-            if mov.from.0 != king_sq.0 {
-                return false;
-            }
-            if legal {
-                return self.is_legal(&mov);
-            }
-            true
-        });
 
         // insufficient material
         let all_pieces = self.chessboard.all_pieces;
@@ -479,10 +468,19 @@ impl ChessPosition {
                 return Outcome::Finished(None);
             }
         }
+
         if count == 4 {
-            // K + N vs K + N
+            // K + N vs K + N or K + N + N vs K
             if white_bishops.is_empty() && black_bishops.is_empty() {
                 return Outcome::Finished(None);
+            }
+
+            if white_bishops.count() == 1 && black_bishops.count() == 1 {
+                let w_sq = white_bishops.pop_lsb().unwrap();
+                let b_sq = black_bishops.pop_lsb().unwrap();
+                if w_sq.colour() == b_sq.colour() {
+                    return Outcome::Finished(None);
+                }
             }
 
             if black_bishops.count() == 2 {

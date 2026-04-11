@@ -2,7 +2,17 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 use burn::{
-    Tensor, config::Config, lr_scheduler::{LrScheduler, noam::{NoamLrScheduler, NoamLrSchedulerConfig}}, module::{AutodiffModule, Module}, optim::{AdamW, AdamWConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor}, prelude::{Backend, ToElement}, record::{FullPrecisionSettings, NamedMpkFileRecorder}, tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend}
+    Tensor,
+    config::Config,
+    lr_scheduler::{
+        LrScheduler,
+        noam::{NoamLrScheduler, NoamLrSchedulerConfig},
+    },
+    module::{AutodiffModule, Module},
+    optim::{AdamW, AdamWConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
+    prelude::{Backend, ToElement},
+    record::{FullPrecisionSettings, NamedMpkFileRecorder},
+    tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
 use log::info;
 use rand::{SeedableRng, rngs::SmallRng};
@@ -119,12 +129,12 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
     let csv_path = format!("{}/metrics.csv", artifact_dir);
     let mut csv_file = OpenOptions::new().create(true).append(true).open(&csv_path).unwrap();
     if std::fs::metadata(&csv_path).unwrap().len() == 0 {
-        writeln!(csv_file, "iteration,avg_loss,avg_game_length,nodes_expanded,avg_illegal_prob").unwrap();
+        writeln!(csv_file, "iteration,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
     }
 
     let mut iterations = 0;
     let mut positions_expanded: u32 = 0;
-    let mut game_over_count: f32 = 0.0;
+    let mut game_over_count: [f32; 2] = [0.0; 2];
     let mut average_game_length: f32 = 0.0;
     loop {
         info!("Starting Self play - Train loop: cycle {}", iterations);
@@ -132,22 +142,25 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         let mut illegal_move_weight: f64 = 0.0;
 
         for _ in 0..training_config.steps_per_iter {
-            let (total_length, total_games): (f32, f32) = games
+            let (total_length, outcome): (f32, [f32; 2]) = games
                 .par_iter_mut()
                 .zip(mctss.par_iter_mut())
                 .map(|(game, mcts)| {
-                    if let Outcome::Finished(_) = game.check_game_state(training_config.legal) {
+                    info!("halfmove clock: {}", game.position.halfmove_clock);
+                    if let Outcome::Finished(color) = game.check_game_state(training_config.legal) {
                         let length = game.game_history.len() as f32;
+                        let outcome = if color.is_none() { [0.0, 1.0] } else { [1.0, 0.0] };
                         *game = ChessGame::default();
                         *mcts = Mcts::from_game(&game, 1024, *mcts_config);
-                        return (length, 1.0);
+                        return (length, outcome);
                     }
-                    (0.0, 0.0)
+                    (0.0, [0.0, 0.0])
                 })
-                .reduce(|| (0.0, 0.0), |a, b| (a.0 + b.0, a.1 + b.1));
+                .reduce(|| (0.0, [0.0, 0.0]), |a, b| (a.0 + b.0, [a.1[0] + b.1[0], a.1[1] + b.1[1]]));
 
             average_game_length += total_length;
-            game_over_count += total_games;
+            game_over_count[0] += outcome[0];
+            game_over_count[1] += outcome[1];
 
             for _count in 0..mcts_config.num_simulations {
                 mctss.par_iter_mut().for_each(|mcts| {
@@ -169,12 +182,18 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                         info!("\n------\n{}", game.position);
                         info!("Selected move: {}\n------", &mov.to_uci());
                     };
+                    let draw_threshold = 0.5 + (1.0 / (game.game_history.len() as f32 + 1.0)) * 0.5;
+                    if sample.1[1] > draw_threshold {
+                        // sample.1 is root value after search, just restart. starts at 1, down to
+                        // 0.5 certain of draw at 200 moves
+                        game.position.halfmove_clock = 200;
+                    }
                     mcts.add_dirichlet_noise(mcts.root);
                     sample
                 })
                 .collect();
 
-            for sample in new_samples {
+            for (sample, _) in new_samples {
                 if let Some(sample) = sample {
                     replay_buffer.push(sample);
                 }
@@ -195,12 +214,22 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
         let avg_illegal_prob = illegal_move_weight / total_batches;
 
-        writeln!(csv_file, "{},{},{},{},{}", iterations, loss_val, average_game_length / game_over_count, positions_expanded, avg_illegal_prob)
-            .unwrap();
+        writeln!(
+            csv_file,
+            "{},{},{},{},{},{},{}",
+            iterations,
+            loss_val,
+            average_game_length / (game_over_count[0] + game_over_count[1]),
+            game_over_count[1],
+            game_over_count[0],
+            positions_expanded,
+            avg_illegal_prob
+        )
+        .unwrap();
         csv_file.flush().unwrap();
 
-        if iterations % 25 == 0 {
-            let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 25);
+        if iterations % 100 == 0 {
+            let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 100);
             info!("Saving model snapshot at: {}", &snapshot_path);
             if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
                 println!("failed to save model: {}", err);
@@ -227,7 +256,6 @@ pub fn train<B: AutodiffBackend>(
     let loss = output.loss;
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
-
 
     let loss_val = loss.clone().into_scalar().to_f32();
     (optimizer.step(lr, model.clone(), grads), loss_val)

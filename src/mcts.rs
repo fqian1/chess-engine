@@ -345,10 +345,10 @@ impl Mcts {
         self.position_arena[self.node_arena[node_idx].get_data().chess_position_idx].clone()
     }
 
-    pub fn make_targets(&mut self) -> Option<TrainingSample> {
+    pub fn make_targets(&mut self) -> (Option<TrainingSample>, [f32;3]) {
         let node = &self.node_arena[self.root];
         let Some((start, end)) = node.get_data().child_edge_range else {
-            return None;
+            return (None, [0.0;3]);
         };
 
         let position = &self.position_arena[node.get_data().chess_position_idx];
@@ -381,7 +381,7 @@ impl Mcts {
         }
 
         let targets = NetworkLabels { policy: target_policy, value: root_value };
-        Some(TrainingSample { inputs, targets })
+        (Some(TrainingSample { inputs, targets }), root_value)
     }
 
     pub fn traverse_get_terminal(&mut self) -> bool {
