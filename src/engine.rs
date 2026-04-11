@@ -187,14 +187,15 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     let sample = mcts.make_targets();
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
-                        info!("\n------\n{}", game.position);
-                        info!("Selected move: {}\n------", &mov.to_uci());
+                        // info!("\n------\n{}", game.position);
+                        // info!("Selected move: {}\n------", &mov.to_uci());
                     };
                     let draw_threshold = 0.5 + (1.0 / (game.game_history.len() as f32 + 1.0)) * 0.5;
                     if sample.1[1] > draw_threshold {
                         // sample.1 is root value after search, just restart. starts at 1, down to
                         // 0.5 certain of draw at 200 moves
                         game.position.halfmove_clock = 200;
+                        info!("{}", sample.1[1]);
                     }
                     mcts.add_dirichlet_noise(mcts.root);
                     sample
@@ -235,15 +236,15 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         )
         .unwrap();
         csv_file.flush().unwrap();
-
-        if iterations % 100 == 0 {
-            let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 100);
-            info!("Saving model snapshot at: {}", &snapshot_path);
-            if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
-                println!("failed to save model: {}", err);
-            }
-        }
-
+        //
+        // if iterations % 100 == 0 {
+        //     let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 100);
+        //     info!("Saving model snapshot at: {}", &snapshot_path);
+        //     if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
+        //         println!("failed to save model: {}", err);
+        //     }
+        // }
+        //
         iterations += 1;
     }
 }

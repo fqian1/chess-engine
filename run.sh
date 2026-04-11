@@ -18,7 +18,7 @@ build_nvidia | bn)
     cargo build --release --no-default-features --features "cuda,autotune"
     ;;
 quick|q)
-    ./target/release/chess-engine -p "./tmp" -b 8 -n 80 -i 8 -e 40
+    ./target/release/chess-engine -p "./tmp" -b 128 -n 80 -i 8 -e 40
     ;;
 legal_masked|lm)
     ./target/release/chess-engine -l -m -p "./tmp/legal_masked/"
