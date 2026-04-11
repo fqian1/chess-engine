@@ -15,6 +15,38 @@ pub struct NetworkInputs {
     pub meta:   [f32; 5],
 }
 
+impl fmt::Display for NetworkInputs {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        let mut thing = ['0'; 64];
+        for i in 0..6 {
+            for j in 0..64 {
+                if self.boards[i * 64 + j] == 1.0 {
+                    thing[j] = '1';
+                }
+            }
+        }
+
+        for i in 0..64 {
+            if self.boards[i + 832] == 1.0 {
+                thing[i] = '8';
+            }
+        }
+
+        let mut output = String::new();
+        for i in 0..8 {
+            for j in 0..8 {
+                let val = thing[i * 8 + j];
+                output.push_str(&val.to_string());
+                output.push(' ');
+            }
+            output.push('\n');
+        }
+        output.push_str(&format!("value:\n{:?}", self.meta));
+        write!(f, "{}", output)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct NetworkLabels {
     pub policy: [f32; 64],
@@ -185,7 +217,9 @@ impl ReplayBuffer {
             panic!("not enough food in buffer");
         }
 
-        info!("sampling: {}", self.buffer[rng.random_range(0..self.buffer.len())].targets);
+
+        let uh = rng.random_range(0..self.buffer.len()-1);
+        // info!("sampling input:\n {}\noutput:\n{}", self.buffer[uh].inputs, self.buffer[uh].targets);
         let samples: Vec<TrainingSample> = self.buffer.sample(rng, batch_size).cloned().collect();
         let batcher = ChessBatcher {};
         batcher.batch(samples, device)

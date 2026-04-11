@@ -146,7 +146,9 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                 .par_iter_mut()
                 .zip(mctss.par_iter_mut())
                 .map(|(game, mcts)| {
-                    info!("halfmove clock: {}", game.position.halfmove_clock);
+                    if game.position.halfmove_clock > 45 {
+                        info!("halfmove clock: {}", game.position.halfmove_clock);
+                    }
                     if let Outcome::Finished(color) = game.check_game_state(training_config.legal) {
                         let length = game.game_history.len() as f32;
                         let outcome = if color.is_none() { [0.0, 1.0] } else { [1.0, 0.0] };
@@ -157,6 +159,12 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     (0.0, [0.0, 0.0])
                 })
                 .reduce(|| (0.0, [0.0, 0.0]), |a, b| (a.0 + b.0, [a.1[0] + b.1[0], a.1[1] + b.1[1]]));
+
+            if let Some(thing) = games.iter().find(|game| matches!(game.check_game_state(training_config.legal), Outcome::Finished(_))) {
+                thing.game_history.iter().for_each(|pos| {
+                    info!("{}", pos);
+                });
+            }
 
             average_game_length += total_length;
             game_over_count[0] += outcome[0];
