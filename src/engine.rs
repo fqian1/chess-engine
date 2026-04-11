@@ -142,6 +142,12 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         let mut illegal_move_weight: f64 = 0.0;
 
         for _ in 0..training_config.steps_per_iter {
+            if let Some(thing) = games.iter().find(|game| matches!(game.check_game_state(training_config.legal), Outcome::Finished(_))) {
+                thing.game_history.iter().for_each(|pos| {
+                    info!("{}", pos);
+                });
+            }
+
             let (total_length, outcome): (f32, [f32; 2]) = games
                 .par_iter_mut()
                 .zip(mctss.par_iter_mut())
@@ -159,12 +165,6 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     (0.0, [0.0, 0.0])
                 })
                 .reduce(|| (0.0, [0.0, 0.0]), |a, b| (a.0 + b.0, [a.1[0] + b.1[0], a.1[1] + b.1[1]]));
-
-            if let Some(thing) = games.iter().find(|game| matches!(game.check_game_state(training_config.legal), Outcome::Finished(_))) {
-                thing.game_history.iter().for_each(|pos| {
-                    info!("{}", pos);
-                });
-            }
 
             average_game_length += total_length;
             game_over_count[0] += outcome[0];
@@ -190,7 +190,12 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                         // info!("\n------\n{}", game.position);
                         // info!("Selected move: {}\n------", &mov.to_uci());
                     };
-                    let draw_threshold = 0.5 + (1.0 / (game.game_history.len() as f32 + 1.0)) * 0.5;
+                    // scale draw threshold down after 60 moves
+                    let draw_threshold = if game.game_history.len() > 40 {
+                        0.7 + (1.0 / ((game.game_history.len() - 40) as f32))
+                    } else {
+                        0.95
+                    };
                     if sample.1[1] > draw_threshold {
                         // sample.1 is root value after search, just restart. starts at 1, down to
                         // 0.5 certain of draw at 200 moves
@@ -229,8 +234,8 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
             iterations,
             loss_val,
             average_game_length / (game_over_count[0] + game_over_count[1]),
-            game_over_count[1],
             game_over_count[0],
+            game_over_count[1],
             positions_expanded,
             avg_illegal_prob
         )
