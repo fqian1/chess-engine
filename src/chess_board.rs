@@ -344,7 +344,7 @@ impl ChessBoard {
                 ],
             ],
             white_occupancy: Bitboard::WHITE_OCCUPANCY,
-            black_occupancy: Bitboard::WHITE_OCCUPANCY,
+            black_occupancy: Bitboard::BLACK_OCCUPANCY,
             all_pieces: Bitboard::ALL_PIECES,
         }
     }
