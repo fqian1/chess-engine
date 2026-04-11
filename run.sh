@@ -9,7 +9,7 @@ test | t)
     RUST_LOG=chess-engine=info cargo test -- --nocapture "$@"
     ;;
 debug | d)
-    RUST_BACKTRACE=1 RUST_LOG=chess-engine=info ./target/debug/chess-engine "$@"
+    RUST_BACKTRACE=1 RUST_LOG=chess-engine=info cargo run -- "$@"
     ;;
 run | r)
     cargo run --release "$@"
@@ -18,7 +18,7 @@ build_nvidia | bn)
     cargo build --release --no-default-features --features "cuda,autotune"
     ;;
 quick|q)
-    ./target/release/chess-engine -p "./tmp" -b 128 -n 80 -i 8 -e 40
+    ./target/release/chess-engine -p "./tmp" -b 64 -n 80 -i 8 -e 16
     ;;
 legal_masked|lm)
     ./target/release/chess-engine -l -m -p "./tmp/legal_masked/"

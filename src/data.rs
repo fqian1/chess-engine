@@ -204,9 +204,9 @@ impl ReplayBuffer {
 
     pub fn push(&mut self, sample: TrainingSample) {
         if self.buffer.len() < self.capacity {
-            self.buffer.push(sample.clone());
+            self.buffer.push(sample);
         } else {
-            self.buffer[self.pointer] = sample.clone();
+            self.buffer[self.pointer] = sample;
             self.pointer = (self.pointer + 1) % self.capacity;
         }
     }

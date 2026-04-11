@@ -222,11 +222,6 @@ impl Mcts {
         }
     }
 
-    pub fn root_colour(&self) -> Color {
-        let pos = self.node_arena[self.root].get_data().chess_position_idx;
-        self.position_arena[pos].side_to_move
-    }
-
     pub fn backprop(&mut self, value: [f32; 3], color: Color) {
         self.path.iter().for_each(|&idx| {
             let edge = &mut self.edge_arena[idx];
