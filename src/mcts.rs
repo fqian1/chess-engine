@@ -236,11 +236,11 @@ impl Mcts {
             let position = &self.position_arena[parent.get_data().chess_position_idx];
             let side_to_move = position.side_to_move;
 
-            if root_colour != side_to_move {
-                let temp = value[0];
-                value[0] = value[2];
-                value[2] = temp;
-            }
+            let value = if root_colour != side_to_move {
+                [value[2], value[1], value[0]]
+            } else {
+                value
+            };
 
             edge.total_value[0] += value[0];
             edge.total_value[1] += value[1];
