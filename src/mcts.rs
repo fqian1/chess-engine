@@ -227,8 +227,7 @@ impl Mcts {
         self.position_arena[pos].side_to_move
     }
 
-    pub fn backprop(&mut self, mut value: [f32; 3]) {
-        let root_colour = self.root_colour();
+    pub fn backprop(&mut self, value: [f32; 3], color: Color) {
         self.path.iter().for_each(|&idx| {
             let edge = &mut self.edge_arena[idx];
 
@@ -236,7 +235,7 @@ impl Mcts {
             let position = &self.position_arena[parent.get_data().chess_position_idx];
             let side_to_move = position.side_to_move;
 
-            let value = if root_colour != side_to_move {
+            let value = if color != side_to_move {
                 [value[2], value[1], value[0]]
             } else {
                 value
@@ -394,7 +393,8 @@ impl Mcts {
                 let node = &self.node_arena[current_node_idx];
                 if node.get_data().is_terminal {
                     let value = node.get_data().value.expect("Terminal node missing value");
-                    self.backprop(value);
+                    let side_to_move = self.position_arena[node.get_data().chess_position_idx].side_to_move;
+                    self.backprop(value, side_to_move);
                     return true;
                 }
                 break;
@@ -630,11 +630,12 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             let node_to_expand = &mut game.node_arena[node_idx];
             node_to_expand.get_data_mut().child_edge_range = Some((start, end));
             node_to_expand.get_data_mut().value = Some(value);
+            let side_to_move = position.side_to_move;
             // extra case just for idx 0
             if node_idx == 0 {
                 game.add_dirichlet_noise(node_idx);
             }
-            game.backprop(value);
+            game.backprop(value, side_to_move);
             game.path = Vec::new();
             rate
         })
