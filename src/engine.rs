@@ -122,19 +122,21 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
     let mut lr_scheduler = training_config.scheduler.init().unwrap();
     let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
     let mut games = vec![ChessGame::default(); training_config.batch_size];
-    let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(&game, 1024, *mcts_config)).collect();
+    let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(&game, 10000, *mcts_config)).collect();
     let mut rng = SmallRng::seed_from_u64(training_config.seed);
     let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
 
     let csv_path = format!("{}/metrics.csv", artifact_dir);
     let mut csv_file = OpenOptions::new().create(true).append(true).open(&csv_path).unwrap();
     if std::fs::metadata(&csv_path).unwrap().len() == 0 {
-        writeln!(csv_file, "iteration,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
+        writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
     }
 
+    let mut games_started: u32 = games.len() as u32;
     let mut iterations = 0;
     let mut positions_expanded: u32 = 0;
-    let mut game_over_count: [f32; 2] = [0.0; 2];
+    let mut wins = 0.0;
+    let mut draws = 0.0;
     let mut average_game_length: f32 = 0.0;
     loop {
         info!("Starting Self play - Train loop: cycle {}", iterations);
@@ -148,7 +150,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                 });
             }
 
-            let (total_length, outcome): (f32, [f32; 2]) = games
+            let (total_length, win, draw, new_games): (f32, f32, f32, u32) = games
                 .par_iter_mut()
                 .zip(mctss.par_iter_mut())
                 .map(|(game, mcts)| {
@@ -157,18 +159,20 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     }
                     if let Outcome::Finished(color) = game.check_game_state(training_config.legal) {
                         let length = game.game_history.len() as f32;
-                        let outcome = if color.is_none() { [0.0, 1.0] } else { [1.0, 0.0] };
+                        let (win, draw) = if color.is_none() { (0.0, 1.0) } else { (1.0, 0.0) };
+                        let new_game = 1;
                         *game = ChessGame::default();
-                        *mcts = Mcts::from_game(&game, 1024, *mcts_config);
-                        return (length, outcome);
+                        *mcts = Mcts::from_game(&game, 10000, *mcts_config);
+                        return (length, win, draw, new_game);
                     }
-                    (0.0, [0.0, 0.0])
+                    (0.0, 0.0, 0.0, 0)
                 })
-                .reduce(|| (0.0, [0.0, 0.0]), |a, b| (a.0 + b.0, [a.1[0] + b.1[0], a.1[1] + b.1[1]]));
+                .reduce(|| (0.0, 0.0, 0.0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3));
 
+            games_started += new_games;
             average_game_length += total_length;
-            game_over_count[0] += outcome[0];
-            game_over_count[1] += outcome[1];
+            wins += win;
+            draws += draw;
 
             for _count in 0..mcts_config.num_simulations {
                 mctss.par_iter_mut().for_each(|mcts| {
@@ -187,18 +191,13 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     let sample = mcts.make_targets();
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
-                        // info!("\n------\n{}", game.position);
-                        // info!("Selected move: {}\n------", &mov.to_uci());
+                        info!("\n{}", game.position);
+                        info!("\nSelected move: {}", &mov.to_uci());
                     };
                     // scale draw threshold down after 60 moves
-                    let draw_threshold = if game.game_history.len() > 40 {
-                        0.7 + (1.0 / ((game.game_history.len() - 40) as f32))
-                    } else {
-                        0.95
-                    };
+                    let draw_threshold = if game.game_history.len() > 60 { 0.75 } else { 0.95 };
                     if sample.1[1] > draw_threshold {
-                        // sample.1 is root value after search, just restart. starts at 1, down to
-                        // 0.5 certain of draw at 200 moves
+                        // sample.1 is root value after search, just restart.
                         game.position.halfmove_clock = 200;
                         info!("{}", sample.1[1]);
                     }
@@ -230,26 +229,27 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 
         writeln!(
             csv_file,
-            "{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{}",
             iterations,
+            games_started,
             loss_val,
-            average_game_length / (game_over_count[0] + game_over_count[1]),
-            game_over_count[0],
-            game_over_count[1],
+            average_game_length / wins + draws,
+            wins,
+            draws,
             positions_expanded,
             avg_illegal_prob
         )
         .unwrap();
         csv_file.flush().unwrap();
-        //
-        // if iterations % 100 == 0 {
-        //     let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 100);
-        //     info!("Saving model snapshot at: {}", &snapshot_path);
-        //     if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
-        //         println!("failed to save model: {}", err);
-        //     }
-        // }
-        //
+
+        if iterations % 100 == 0 {
+            let snapshot_path = format!("{}/model-{}", artifact_dir, iterations / 100);
+            info!("Saving model snapshot at: {}", &snapshot_path);
+            if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
+                println!("failed to save model: {}", err);
+            }
+        }
+
         iterations += 1;
     }
 }
