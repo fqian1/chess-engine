@@ -24,14 +24,14 @@ struct Args {
     masked: bool,
     #[arg(short, long, default_value_t = 1.25)]
     c_puct: f32,
-    #[arg(short, long, default_value_t = 80)]
-    epochs: usize, // gradient steps
+    #[arg(short, long, default_value_t = 64)]
+    gradient_steps: usize,
     #[arg(short, long, default_value_t = 1234)]
     seed: u64,
-    #[arg(short, long, default_value_t = 200)]
-    num_simulations: usize, // mcts search count
-    #[arg(short, long, default_value_t = 20)]
-    iter_count: usize, // moves played / samples generated before training
+    #[arg(short, long, default_value_t = 256)]
+    num_simulations: usize,
+    #[arg(short, long, default_value_t = 64)]
+    iter_count: usize,
     #[arg(short, long, default_value_t = 1.0)]
     temperature: f32,
     #[arg(short, long, value_name = "DIR")]
@@ -97,7 +97,7 @@ fn main() {
         legal: args.legal,
         scheduler: scheduler_config,
         optimizer: optimizer_config,
-        num_epochs: args.epochs,
+        gradient_steps: args.gradient_steps,
         steps_per_iter: args.iter_count,
         batch_size: args.batch_size,
         num_workers: 8,
