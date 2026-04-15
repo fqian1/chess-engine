@@ -196,7 +196,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     };
                     // scale draw threshold down after 60 moves
                     let draw_threshold = if game.game_history.len() > 60 { 0.75 } else { 0.95 };
-                    if sample.1[1] > draw_threshold {
+                    if sample.1[1] > draw_threshold || game.game_history.len() > 400 {
                         // sample.1 is root value after search, just restart.
                         game.position.halfmove_clock = 200;
                         info!("{}", sample.1[1]);
@@ -237,7 +237,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
             iterations,
             games_started,
             loss_val,
-            average_game_length / wins + draws,
+            average_game_length / (wins + draws),
             wins,
             draws,
             positions_expanded,
