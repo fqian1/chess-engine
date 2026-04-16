@@ -106,7 +106,7 @@ fn main() {
     };
 
     loop {
-        println!("What do you want to do?\n1 - Train\n2 - Inference");
+        println!("What do you want to do?\n1 - Train a model!\n2 - Inference");
         io::stdout().flush().unwrap();
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("failed to read input");

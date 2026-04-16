@@ -2,20 +2,30 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This is my undergrad fyp:
-A chess client and mcts powered engine in about ~2500 lines.
+A Rust-based chess engine that combines Monte Carlo Tree Search (MCTS) with a Transformer neural network for self-play reinforcement learning. Built with the Burn deep learning framework.
+
+## Overview
+This project implements an AlphaZero-style chess engine where a Transformer model learns to evaluate positions and suggest moves through self-play. The engine consists of:
+ - A fully featured chess library with bitboards, move generators, legality checking, fen parsing.
+ - A Bipartite MCTS implementation with PUCT node selection and dirichlet noise. 
+ - An autoregressive Transformer neural network that predicts a piece to select or square to move to and position value.
+ - A self-play pipeline to train the transformer
 
 ## Features
-
-*   **FEN String Parsing**: load chess game from fen strings
-*   **Move Generation**: generate pseudolegal moves for a given position then filter for legality
-*   **Command-Line Interface**: A simple CLI to train your own model and then run inference on it
+*   **FEN String Parsing**: load chess game from fen strings.
+*   **Move Generation**: generate pseudolegal moves for a given position then filter for legality.
+*   **MCTS**: Configurable MCTS rollouts.
+*   **Transformer Model**: 8 heads, 8 layers, 512 embedding dimensions.
+*   **Masking and Legality**: Optional masking and legality training options.
+*   **Cuda and Wgpu**: Configurable backends with --features flag.
+*   **Command-Line Interface**: A simple CLI to train your own model and then run inference on it.
 
 ## How to build from source:
 
 1. Ensure the rust toolchain is installed:
    Linux/MacOS: ```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```
    Windows: Find the installer here: https://rustup.rs/#
+   tested on: rustc 1.96.0-nightly (f5eca4fcf 2026-04-09)
    ```
 
 2.  Clone the repository:
@@ -40,33 +50,44 @@ This makes it 2% more likely the code will compile.
     ```
 Run with the -h flag to see options
 
+```
+--features autotune
+--features cuda
+```
+
+Project structure: 
+```
+./
+├── src/
+│   ├── bitboard.rs
+│   ├── castling.rs
+│   ├── chess_board.rs
+│   ├── chess_game.rs
+│   ├── chess_move.rs
+│   ├── chess_piece.rs
+│   ├── chess_position.rs
+│   ├── chess_square.rs
+│   ├── data.rs
+│   ├── engine.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── mcts.rs
+│   ├── model.rs
+│   └── zobrist.rs
+├── tests/
+│   └── tests.rs
+├── Cargo.lock
+├── Cargo.toml
+├── LICENSE
+├── README.md
+├── run.sh*
+├── rust-analyzer.toml
+├── rustfmt.toml
+└── shell.nix
+```
+
+Performance Notes: 
+The Engine was designed for interpretability and experimentation, training can take weeks, and isn't suited for competitive play against top engines.
+Memory (RAM) usage scales with batch size, and can use 6x more system ram than vram.
+
 Distributed under the MIT License. See LICENSE for more information.
-
-1. Hypothesis and Experiments
--------------------------------------------------------------------------------
-A. Ruleset Convergence (Pseudo-Legal vs. Legal)
-   - Control: Train on strict legal ruleset.
-   - Test: Train on pseudo-legal ruleset (explicit king capture = win).
-   - Hypothesis: Pseudo-legal training naturally converges to legal play (checkmate/pins emerge as emergent behaviors to secure/prevent king capture).
-
-B. Logit Masking vs. Punishment (Mechanics "Grokking")
-   - Control: Mask illegal moves before softmax (standard practice; network is blind to rules).
-   - Test: No masking before softmax. Punish illegal/impossible moves via loss function.
-   - Hypothesis: Unmasked training learns slower and plays tentatively, but forces the network to internally map ("grok") the physical mechanics of the board.
-
-2. Novel Network Architecture: 2 Pass Encoder
--------------------------------------------------------------------------------
-- Inputs: Board state (12 bitboards) + En Passant square (1 bitboard) + Selected square (1 bitboard) & Castling rights (4x1 f32) + 50-move rule scalar (1 f32).
-- Outputs: Policy head (64-square distribution: [f32; 64]) + Value head (W/D/L buckets: [f32; 3]).
-- Execution Flow:
-   - Pass 1: Select origin square (piece to move).
-   - Pass 2: Select destination square (feed Pass 1 output back into input). (Promotions rolled out automatically by Mcts).
-- MCTS Implications: Doubles tree depth, but reduces model action space.
-- Both heads use softmax activation, kl divergence loss.
-
-3. Bespoke Client and Engine Implementation
--------------------------------------------------------------------------------
-- Board Representation: Bitboards.
-- Move Generation: Pseudo-legal and legal generators.
-- Bipartite MCTS for piece -> destination.
-- Language/Stack: rust, burn, rand, rayon.
