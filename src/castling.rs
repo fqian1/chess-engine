@@ -62,7 +62,6 @@ impl CastlingRights {
     pub fn remove(&mut self, rights_to_remove: CastlingRights) {
         *self &= !rights_to_remove;
     }
-
 }
 
 // Implement bitwise operations

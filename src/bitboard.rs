@@ -139,7 +139,7 @@ impl Bitboard {
         *self = self.flipped();
     }
 
-    pub fn to_bool(&self) -> [bool;64] {
+    pub fn to_bool(&self) -> [bool; 64] {
         let mut bools = [false; 64];
         for i in 0..64 {
             bools[i] = (self.0 >> i) & 1 != 0;

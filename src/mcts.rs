@@ -230,11 +230,7 @@ impl Mcts {
             let position = &self.position_arena[parent.get_data().chess_position_idx];
             let side_to_move = position.side_to_move;
 
-            let value = if color != side_to_move {
-                [value[2], value[1], value[0]]
-            } else {
-                value
-            };
+            let value = if color != side_to_move { [value[2], value[1], value[0]] } else { value };
 
             edge.total_value[0] += value[0];
             edge.total_value[1] += value[1];
@@ -339,10 +335,10 @@ impl Mcts {
         self.position_arena[self.node_arena[node_idx].get_data().chess_position_idx].clone()
     }
 
-    pub fn make_targets(&mut self) -> (Option<TrainingSample>, [f32;3]) {
+    pub fn make_targets(&mut self) -> (Option<TrainingSample>, [f32; 3]) {
         let node = &self.node_arena[self.root];
         let Some((start, end)) = node.get_data().child_edge_range else {
-            return (None, [0.0;3]);
+            return (None, [0.0; 3]);
         };
 
         let position = &self.position_arena[node.get_data().chess_position_idx];
@@ -351,7 +347,8 @@ impl Mcts {
             MctsNode::PieceMove { from_sq, .. } => NetworkInputs::from_position(position, Some(from_sq)),
         };
 
-        let total_visits: u32 = self.edge_arena[start..end].iter().map(|e| e.visits).sum();
+        let total_visits= node.get_data().visits;
+
         let mut target_policy = [0.0; 64];
         self.edge_arena[start..end].iter().for_each(|e| target_policy[e.square.0 as usize] += e.visits as f32 / total_visits as f32);
 

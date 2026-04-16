@@ -182,9 +182,8 @@ impl ChessBoard {
             return true;
         }
 
-        let mut diagonal_attackers = (enemy_pieces[PieceType::Bishop as usize]
-            | enemy_pieces[PieceType::Queen as usize])
-            & bishop_attacks[sq.0 as usize];
+        let mut diagonal_attackers =
+            (enemy_pieces[PieceType::Bishop as usize] | enemy_pieces[PieceType::Queen as usize]) & bishop_attacks[sq.0 as usize];
 
         while let Some(attacker_sq) = diagonal_attackers.pop_lsb() {
             let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();
@@ -193,8 +192,7 @@ impl ChessBoard {
             }
         }
 
-        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize] | enemy_pieces[PieceType::Queen as usize])
-            & rook_attacks[sq.0 as usize];
+        let mut straight_attackers = (enemy_pieces[PieceType::Rook as usize] | enemy_pieces[PieceType::Queen as usize]) & rook_attacks[sq.0 as usize];
 
         while let Some(attacker_sq) = straight_attackers.pop_lsb() {
             let path = ChessBoard::BETWEEN[sq.0 as usize][attacker_sq.0 as usize].unwrap();

@@ -33,7 +33,7 @@ impl Color {
 }
 
 impl fmt::Display for Color {
-    fn fmt(&self, f: &mut  fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Color::White => write!(f, "White"),
             Color::Black => write!(f, "Black"),
@@ -86,11 +86,7 @@ impl PieceType {
             PieceType::Queen => 'q',
             PieceType::King => 'k',
         };
-        if color == Color::White {
-            lower.to_ascii_uppercase()
-        } else {
-            lower
-        }
+        if color == Color::White { lower.to_ascii_uppercase() } else { lower }
     }
 }
 

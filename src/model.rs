@@ -41,9 +41,7 @@ impl ChessTransformerConfig {
             coordinates,
             pos_embedding_x: EmbeddingConfig::new(8, self.d_model).init(device),
             pos_embedding_y: EmbeddingConfig::new(8, self.d_model).init(device),
-            transformer: TransformerEncoderConfig::new(self.d_model, self.d_ff, self.n_heads, self.n_layers)
-                .with_dropout(0.0)
-                .init(device),
+            transformer: TransformerEncoderConfig::new(self.d_model, self.d_ff, self.n_heads, self.n_layers).with_dropout(0.0).init(device),
             policy: LinearConfig::new(self.d_model, 1).init(device),
             value: LinearConfig::new(self.d_model, 3).init(device),
             d_model: self.d_model,
@@ -103,13 +101,7 @@ impl<B: Backend> ChessTransformer<B> {
     pub fn forward_classification(&self, batch: ChessBatch<B>) -> ClassificationOutput<B> {
         let [batch_size, _, _] = batch.boards.dims();
         let (policy_pred, value_pred) = self.forward(batch.boards.clone(), batch.metas);
-        let loss = self.calculate_loss(
-            policy_pred.clone(),
-            value_pred.clone(),
-            batch.policy_targets.clone(),
-            batch.value_targets.clone(),
-            0.7,
-        );
+        let loss = self.calculate_loss(policy_pred.clone(), value_pred.clone(), batch.policy_targets.clone(), batch.value_targets.clone(), 0.7);
         let target_indices = batch.policy_targets.argmax(1).reshape([batch_size]);
         ClassificationOutput::new(loss, policy_pred, target_indices)
     }
