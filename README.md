@@ -88,6 +88,6 @@ Project structure:
 
 Performance Notes: 
 The Engine was designed for interpretability and experimentation, training can take weeks, and isn't suited for competitive play against top engines.
-Memory (RAM) usage scales with batch size, and can use 6x more system ram than vram.
+Memory (RAM) usage scales with batch size, and uses about 6x more system ram than vram.
 
 Distributed under the MIT License. See LICENSE for more information.
