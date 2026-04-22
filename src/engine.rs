@@ -1,6 +1,4 @@
-use std::fs::OpenOptions;
-use std::io::Write;
-
+use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
 use burn::{
     Tensor,
     config::Config,
@@ -11,13 +9,14 @@ use burn::{
     module::{AutodiffModule, Module},
     optim::{AdamW, AdamWConfig, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
     prelude::{Backend, ToElement},
-    record::{FullPrecisionSettings, NamedMpkFileRecorder},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
 use log::info;
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
+use std::fs::{OpenOptions};
+use std::io::Write;
 
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,
@@ -26,11 +25,6 @@ use crate::{
     expand_batch,
     model::ChessTransformerConfig,
 };
-
-fn create_artifact_dir(artifact_dir: &str) {
-    std::fs::remove_dir_all(artifact_dir).ok();
-    std::fs::create_dir_all(artifact_dir).ok();
-}
 
 #[derive(Config, Debug)]
 pub struct TrainingConfig {
@@ -114,10 +108,21 @@ pub fn inputs_to_tensor<B: Backend>(buffer: &Vec<NetworkInputs>, device: &B::Dev
 }
 
 pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, training_config: &TrainingConfig, device: &B::Device) {
-    create_artifact_dir(artifact_dir);
+    let mut model: ChessTransformer<B> = training_config.model.init(device);
+
+    if std::fs::exists(&artifact_dir).expect("failed to read fs") {
+        println!("found model in {}", &artifact_dir);
+        let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
+        let record = recorder.load(artifact_dir.into(), device).expect("Failed to load existing model record");
+
+        model = model.load_record(record);
+    } else {
+        println!("creating directory: {}", artifact_dir);
+        std::fs::create_dir_all(&artifact_dir).expect("Failed to create artifact directory");
+    }
+
     B::seed(device, training_config.seed);
 
-    let mut model: ChessTransformer<B> = training_config.model.init(device);
     let mut replay_buffer = ReplayBuffer::new(524288);
     let mut lr_scheduler = training_config.scheduler.init().unwrap();
     let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
@@ -144,11 +149,11 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         let mut illegal_move_weight: f64 = 0.0;
 
         for _ in 0..training_config.steps_per_iter {
-            if let Some(thing) = games.iter().find(|game| matches!(game.check_game_state(training_config.legal), Outcome::Finished(_))) {
-                thing.game_history.iter().for_each(|pos| {
-                    info!("{}", pos);
-                });
-            }
+            // if let Some(thing) = games.iter().find(|game| matches!(game.check_game_state(training_config.legal), Outcome::Finished(_))) {
+            //     thing.game_history.iter().for_each(|pos| {
+            //         info!("{}", pos);
+            //     });
+            // }
 
             let (total_length, win, draw, new_games): (f32, f32, f32, u32) = games
                 .par_iter_mut()
@@ -192,7 +197,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
                         info!("\n{}", game.position);
-                        info!("\nSelected move: {}", &mov.to_uci());
+                        // info!("\nSelected move: {}", &mov.to_uci());
                     };
                     // scale draw threshold down after 60 moves
                     let draw_threshold = if game.game_history.len() > 60 { 0.75 } else { 0.95 };
@@ -208,6 +213,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 
             for (sample, _) in new_samples {
                 if let Some(sample) = sample {
+                    info!("{}", sample);
                     replay_buffer.push(sample);
                 }
             }
