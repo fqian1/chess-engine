@@ -177,6 +177,7 @@ pub struct ChessBatch<B: Backend> {
     pub metas: Tensor<B, 2>,          // Batch x 5
     pub policy_targets: Tensor<B, 2>, // Batch x 64
     pub value_targets: Tensor<B, 2>,  // Batch x 1
+    pub loss_ratio: f32,
 }
 
 impl<B: Backend> Batcher<B, TrainingSample, ChessBatch<B>> for ChessBatcher {
@@ -205,7 +206,9 @@ impl<B: Backend> Batcher<B, TrainingSample, ChessBatch<B>> for ChessBatcher {
         let policy_targets = Tensor::from_data(pol_target, device);
         let value_targets = Tensor::from_data(val_target, device);
 
-        ChessBatch { boards, metas, policy_targets, value_targets }
+        let loss_ratio = 0.7;
+
+        ChessBatch { boards, metas, policy_targets, value_targets, loss_ratio }
     }
 }
 

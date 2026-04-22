@@ -53,7 +53,8 @@ impl<B: AutodiffBackend> TrainStep for ChessTransformer<B> {
     type Input = ChessBatch<B>;
     type Output = ClassificationOutput<B>;
     fn step(&self, batch: ChessBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let item = self.forward_classification(batch);
+        let ratio = batch.loss_ratio;
+        let item = self.forward_classification(batch, ratio);
         TrainOutput::new(self, item.loss.backward(), item)
     }
 }
@@ -62,7 +63,8 @@ impl<B: Backend> InferenceStep for ChessTransformer<B> {
     type Input = ChessBatch<B>;
     type Output = ClassificationOutput<B>;
     fn step(&self, batch: ChessBatch<B>) -> ClassificationOutput<B> {
-        self.forward_classification(batch)
+        let ratio = batch.loss_ratio;
+        self.forward_classification(batch, ratio)
     }
 }
 
@@ -71,7 +73,7 @@ impl<B: Backend> ChessTransformer<B> {
     pub fn forward(&self, board: Tensor<B, 3>, meta: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let [batch_size, _seq_len, _] = board.dims();
 
-        // batchsize x 64 x d_model
+        // batch_size x 64 x d_model
         let mut x = self.piece_encoder.forward(board);
 
         // positional encodings
@@ -81,13 +83,13 @@ impl<B: Backend> ChessTransformer<B> {
         let pos_flat = pos2d.reshape([1, 64, self.d_model]);
         x = x + pos_flat;
 
-        // batchsize x d_model -> batchsize x 64 x d_model
+        // batch_size x d_model -> batchsize x 64 x d_model
         let meta_x = self.meta_encoder.forward(meta).unsqueeze_dim(1);
         let x = Tensor::cat(vec![x, meta_x], 1);
 
         let x = self.transformer.forward(TransformerEncoderInput::new(x));
 
-        // batchsize x 1 x d_model -> batch_size x 3
+        // batch_size x 1 x d_model -> batch_size x 3
         let value_latent = x.clone().slice([0..batch_size, 64..65]).squeeze_dim(1);
         let value = self.value.forward(value_latent);
 
@@ -98,10 +100,10 @@ impl<B: Backend> ChessTransformer<B> {
         (policy, value)
     }
 
-    pub fn forward_classification(&self, batch: ChessBatch<B>) -> ClassificationOutput<B> {
+    pub fn forward_classification(&self, batch: ChessBatch<B>, ratio: f32) -> ClassificationOutput<B> {
         let [batch_size, _, _] = batch.boards.dims();
         let (policy_pred, value_pred) = self.forward(batch.boards.clone(), batch.metas);
-        let loss = self.calculate_loss(policy_pred.clone(), value_pred.clone(), batch.policy_targets.clone(), batch.value_targets.clone(), 0.7);
+        let loss = self.calculate_loss(policy_pred.clone(), value_pred.clone(), batch.policy_targets.clone(), batch.value_targets.clone(), ratio);
         let target_indices = batch.policy_targets.argmax(1).reshape([batch_size]);
         ClassificationOutput::new(loss, policy_pred, target_indices)
     }

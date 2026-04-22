@@ -204,7 +204,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
                     if sample.1[1] > draw_threshold || game.game_history.len() > 400 {
                         // sample.1 is root value after search, just restart.
                         game.position.halfmove_clock = 200;
-                        info!("{}", sample.1[1]);
+                        // info!("{}", sample.1[1]);
                     }
                     mcts.add_dirichlet_noise(mcts.root);
                     sample
@@ -225,17 +225,19 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
             continue;
         }
 
+        let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
+        let avg_illegal_prob = illegal_move_weight / total_batches;
+        info!("illegal weight: {}\ntotal_batches: {}", illegal_move_weight, total_batches);
+
         let mut loss_val: f32 = 0.0;
         for epoch in 0..training_config.gradient_steps {
             info!("Training model: epoch {}", epoch);
-            let (new_model, val) = train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, &mut rng);
+            let (new_model, val) = train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
             model = new_model;
             loss_val += val;
         }
         loss_val /= training_config.gradient_steps as f32;
 
-        let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
-        let avg_illegal_prob = illegal_move_weight / total_batches;
 
         writeln!(
             csv_file,
@@ -271,12 +273,16 @@ pub fn train<B: AutodiffBackend>(
     config: &TrainingConfig,
     games: &ReplayBuffer,
     device: &B::Device,
+    avg_illegal_prob: f32,
     rng: &mut SmallRng,
 ) -> (ChessTransformer<B>, f32) {
     let datas: ChessBatch<B> = games.sample_batch(config.batch_size, rng, device);
     let lr = scheduler.step();
 
-    let output = model.forward_classification(datas);
+    let ratio = 0.5 + avg_illegal_prob / 2.0;
+    info!("\nratio: {}\n", ratio);
+
+    let output = model.forward_classification(datas, ratio);
     let loss = output.loss;
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
