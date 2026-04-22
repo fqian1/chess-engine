@@ -43,8 +43,6 @@ pub struct TrainingConfig {
     pub num_workers: usize,
     #[config(default = 1234)]
     pub seed: u64,
-    #[config(default = 1.0e-4)]
-    pub learning_rate: f64,
 }
 
 pub fn model_make_outputs<B: Backend>(
@@ -279,13 +277,11 @@ pub fn train<B: AutodiffBackend>(
     let datas: ChessBatch<B> = games.sample_batch(config.batch_size, rng, device);
     let lr = scheduler.step();
 
-    let ratio = 0.5 + avg_illegal_prob / 2.0;
-    info!("\nratio: {}\n", ratio);
-
-    let output = model.forward_classification(datas, ratio);
+    let output = model.forward_classification(datas, avg_illegal_prob);
     let loss = output.loss;
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
+
 
     let loss_val = loss.clone().into_scalar().to_f32();
     (optimizer.step(lr, model.clone(), grads), loss_val)

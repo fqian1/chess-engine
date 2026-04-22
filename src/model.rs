@@ -108,7 +108,6 @@ impl<B: Backend> ChessTransformer<B> {
         ClassificationOutput::new(loss, policy_pred, target_indices)
     }
 
-    // tunable hyperparameter: weight of policy loss vs value loss
     fn calculate_loss(
         &self,
         policy_pred: Tensor<B, 2>,
@@ -124,9 +123,6 @@ impl<B: Backend> ChessTransformer<B> {
         let value_probs = log_softmax(value_pred, 1);
         let value_loss = (target_value * value_probs).sum_dim(1).mean().neg();
 
-        if ratio >= 1.0 || ratio <= 0.0 {
-            return policy_loss + value_loss;
-        }
-        (policy_loss * ratio) + (value_loss * (1.0 - ratio))
+        (policy_loss * (1.0 + ratio)) + (value_loss * (1.0 - ratio))
     }
 }
