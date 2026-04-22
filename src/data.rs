@@ -15,6 +15,40 @@ pub struct NetworkInputs {
     pub meta:   [f32; 5],
 }
 
+impl fmt::Display for NetworkInputs {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = String::new();
+        let pieces = ['p', 'n', 'b', 'r', 'k', 'q', 'P', 'N', 'B', 'R', 'K', 'Q', 'e', 'X'];
+        
+        output.push_str("  a b c d e f g h\n");
+        output.push_str("  ----------------\n");
+
+        for rank in (0..8).rev() {
+            output.push_str(&format!("{} ", rank + 1));
+            for file in 0..8 {
+                let mut char_to_print = ". ";
+                let idx = rank * 8 + file;
+
+                for k in (0..14).rev() {
+                    if self.boards[k * 64 + idx] != 0.0 {
+                        let c = pieces[k];
+                        output.push(c);
+                        output.push(' ');
+                        char_to_print = "";
+                        break;
+                    }
+                }
+                output.push_str(char_to_print);
+            }
+            output.push('\n');
+        }
+        
+        output.push_str("  ----------------\n");
+        output.push_str(&format!("Meta: {:?}\n", self.meta));
+        write!(f, "{}", output)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct NetworkLabels {
     pub policy: [f32; 64],
@@ -24,17 +58,18 @@ pub struct NetworkLabels {
 impl fmt::Display for NetworkLabels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
-        for i in 0..8 {
+        output.push_str("______________\n");
+        for i in (0..8).rev() {
             for j in 0..8 {
                 let val = self.policy[i * 8 + j];
                 let formatted = format!("{:.1}", val);
 
-                output.push_str(formatted.trim_start_matches('0'));
+                output.push_str(formatted.strip_prefix("0.").unwrap_or("9"));
                 output.push(' ');
             }
             output.push('\n');
         }
-        output.push_str(&format!("\n{:?}", self.value));
+        output.push_str(&format!("{:?}", self.value));
         write!(f, "{}", output)
     }
 }
@@ -118,6 +153,16 @@ pub struct ChessBatcher {}
 pub struct TrainingSample {
     pub inputs:  NetworkInputs,
     pub targets: NetworkLabels,
+}
+
+impl fmt::Display for TrainingSample {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = String::new();
+        output.push_str("Inputs:\n");
+        output.push_str(&self.inputs.to_string());
+        output.push_str(&self.targets.to_string());
+        write!(f, "{}", output)
+    }
 }
 
 impl Default for TrainingSample {
