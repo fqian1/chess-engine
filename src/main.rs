@@ -88,8 +88,8 @@ fn main() {
     let d_ff = 4 * d_model;
 
     let model_config = ChessTransformerConfig::new(d_model, n_heads, d_ff, n_layers);
-    let optimizer_config = AdamWConfig::new();
-    let scheduler_config = NoamLrSchedulerConfig::new(0.0001);
+    let optimizer_config = AdamWConfig::new().with_beta_1(0.9).with_beta_2(0.999).with_weight_decay(1e-4);
+    let scheduler_config = NoamLrSchedulerConfig::new(0.005);
 
     let training_config = TrainingConfig {
         model: model_config,
