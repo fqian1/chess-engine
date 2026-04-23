@@ -343,11 +343,11 @@ During MCTS rollouts, invalid state transitions poison the value estimations of 
 The system generates data via highly parallelized self-play. Trajectories are stored in a First-In-First-Out (FIFO) replay buffer with a capacity of 524,288 samples. To prevent infinite games, rollouts are forcibly terminated as draws after 400 plies, or if the network's internal value estimation for a draw exceeds 0.95, scaled to 0.75 in the endgame.
 
 == Optimisation and Loss Function
-The network is optimised using the AdamW optimiser with weight decay ($10^(-4)$) and a Noam learning rate scheduler. The loss function is a linear combination of policy loss and value loss.
+The network is optimised using the AdamW optimiser with $beta_1 = 0.9$, $beta_2 = 0.99$ and weight decay = $10^(-4)$. Noam learning rate scheduler is used with a factor of 0.1 and 4000 warmup steps. The loss function is a linear combination of policy loss and value loss.
 
 For a given state $s$, let $pi$ be the MCTS visit count distribution, $p$ be the network's policy prediction, $z$ be the true game outcome, and $v$ be the network's value prediction. The loss function is defined as:
-$L = lambda (- limits(sum)_a pi(a|s) log p(a|s)) plus (1 - lambda) (- limits(sum)_i z_i log v_i)$
-where $lambda = 0.7$ weights the policy gradient against the value estimation. In unmasked configurations, $p(a|s)$ includes probability mass on illegal moves, which are penalised as $pi(a|s) = 0$ for all invalid actions.
+$L = (1 + lambda) (- limits(sum)_a pi(a|s) log p(a|s)) plus (1 - lambda) (- limits(sum)_i z_i log v_i)$
+where $lambda$ is the average probability mass on illegal squares. In unmasked configurations, $p(a|s)$ includes probability mass on illegal moves, which are penalised as $pi(a|s) = 0$ for all invalid actions.
 
 == Experimental Design and Evaluation Metrics
 === The Configuration Matrix
@@ -366,6 +366,8 @@ The learning dynamics of each configuration are evaluated using the following me
 
 // ========================================== // CHAPTER 4: Implementation // ==========================================
 = Implementation Details
+The project is available on github: https://github.com/fqian1/chess-engine
+Dependencies are locked with a Cargo.lock file, and the toolchain and environment is versioned with Nix in the flake.nix.
 == The Chess Client
 === Primitives
 - ChessSquare
@@ -393,11 +395,7 @@ const KNIGHT_ATTACKS: [Bitboard; 64];
 const KING_ATTACKS: [Bitboard; 64];
 const PAWN_ATTACKS_WHITE: [Bitboard; 64];
 const PAWN_ATTACKS_BLACK: [Bitboard; 64];
-
-// SOUTH, WEST, NORTH, EAST
 pub const ROOK_ATTACKS: [[Bitboard; 4]; 64];
-
-// SW, SE, NE, NW
 const BISHOP_ATTACKS: [[Bitboard; 4]; 64];
 const BISHOP_ATTACKS_ALL: [Bitboard; 64];
 const ROOK_ATTACKS_ALL: [Bitboard; 64];
@@ -405,6 +403,7 @@ const BETWEEN: [[Option<Bitboard>; 64]; 64];
 ```
 
 === ChessPosition
+An instance of a chess position.
 ```rust 
 struct ChessPosition {
     chessboard: ChessBoard,
@@ -419,6 +418,7 @@ struct ChessPosition {
 
 ==== Move Generation
 Ray casting is optimized using constant directional masks and pre-computed "between" masks, allowing for $O(1)$ validation of sliding piece moves.
+
 === ChessGame
 ```rust
 struct ChessGame {
@@ -442,8 +442,8 @@ the replay buffer is initialised with size 524288, meaning the model learns from
 
 == The Monte Carlo Tree Search
 === Nodes
-==== Select
-==== Move
+- Select
+- Move
 === Edges
 === Arenas
 === Engine
