@@ -23,10 +23,11 @@ This project implements an AlphaZero-style chess engine where a Transformer mode
 ## How to build from source:
 
 1. Ensure the rust toolchain is installed:
-   Linux/MacOS: ```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```
-   Windows: Find the installer here: https://rustup.rs/#
-   tested on: rustc 1.96.0-nightly (f5eca4fcf 2026-04-09)
+   Linux/MacOS: ```
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
+   Windows: Find the installer here: https://rustup.rs/#
+   Tested on: rustc 1.96.0-nightly (f5eca4fcf 2026-04-09)
 
 2.  Clone the repository:
     ```bash
@@ -46,13 +47,15 @@ This makes it 2% more likely the code will compile.
 
 5.  Run the application:
     ```bash
-    cargo run -- -batch_size 1 -legal -masked -n 20 -e 20 -i 3 -path "./tmp"
+    cargo run -- -batch_size 1 -legal -masked -n 20 -g 20 -i 3 -path "./tmp"
     ```
 Run with the -h flag to see options
 
+
 ```
---features autotune
---features cuda
+default features disable autotune and use wgpu
+for big speed:
+--no-default-feature --features autotune --features cuda
 ```
 
 Project structure: 
