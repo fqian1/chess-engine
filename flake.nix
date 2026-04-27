@@ -27,6 +27,7 @@
           pkgs.cudaPackages.cudatoolkit
           pkgs.linuxPackages.nvidia_x11
           pkgs.typstyle
+          pkgs.flamegraph
         ];
 
         shellHook = ''

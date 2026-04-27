@@ -16,6 +16,8 @@
   leading: 0.65em,
 )
 
+#import "@preview/lovelace:0.3.1": *
+
 // ========================================== // CUSTOM FUNCTIONS // ==========================================
 
 // Function to format Chapter headings
@@ -368,45 +370,306 @@ The learning dynamics of each configuration are evaluated using the following me
 
 // ========================================== // CHAPTER 4: Implementation // ==========================================
 = Implementation Details
-== Core Engine Architecture
+== Software Stack and Overview
 The system is implemented in Rust, utilising its strict aliasing rules to safely parallelise MCTS rollouts without runtime data-race checks. The neural network is implemented using the Burn deep learning framework to enable backend-agnostic tensor operations (WGPU/CUDA). The complete source code is version controlled via a Nix flake.
-=== Bitboard Intrinsics
-To facilitate millions of MCTS rollouts, the environment simulator must be highly optimised. Object-oriented representations of the board are discarded in favour of a bitboard-centric architecture.
 
-The full board state is packed primarily into 12 64-bit Unsigned integers (u64), representing the spatial occupancy of each piece type and colour. This reduces the memory footprint to 96 bytes, ensuring optimal CPU cache locality.
-This enables the use of hardware-level intrinsics `trailing_zeros` and `leading_zeroes` to find the LSB and MSB of a bitboard, to implement Brian Kernighan's algorithm:
+The main execution flow is as follows:
+#pseudocode-list(booktabs: true, title: smallcaps("The Loop"))[
+  *Algorithm:* Self-Play Reinforcement Learning Loop
+
+  + *Initialization*
+    + Load Model weights and initialize Optimizer.
+    + Initialize Replay Buffer and $B$ parallel Chess games.
+
+  + *Self-Play Phase (Data Generation)*
+    + *For each* step in training iteration:
+      + *MCTS Simulation:*
+        + *For* $N$ simulations:
+          + Traverse trees to terminal leaf nodes.
+          + Expand and evaluate leaves in batch using Model.
+      + *Action Selection:*
+        + Generate policy and value targets from tree statistics.
+        + Execute best move in Environment.
+        + Apply Dirichlet noise to root for exploration.
+        + *If* Game meets draw threshold or move limit: Terminate and reset.
+      + *Store:* Push resulting samples into Replay Buffer.
+
+  + *Optimization Phase (Learning)*
+    + *If* Replay Buffer contains sufficient samples:
+      + *For* each gradient epoch:
+        + Sample batch from Buffer.
+        + Update Model parameters via Optimizer.
+        + Step Learning Rate Scheduler.
+
+  + *Checkpointing*
+    + Log metrics (loss, game length, win/draw rates) to CSV.
+    + *If* iteration interval reached: Save Model snapshot to disk.
+]
+
+== Chess Engine Core
+=== Bitboard layout and memory footprint:
+The full board state is packed primarily into 15 64-bit Unsigned integers `struct Bitboard(u64)`, representing the spatial occupancy of each piece type and colour, plus three occupancy bitboards for white, black and all. This reduces the memory footprint to 120 bytes, ensuring optimal CPU cache locality. This enables the use of hardware-level intrinsics `trailing_zeros` and `leading_zeroes` to find the LSB or MSB of a bitboard.
+
+=== Compile‑time mask generation:
+Masks are precomputed drectional rays (e.g., `ROOK_ATTACKS` split into cardinal directions) evaluated at compile time using `const fn`. A between mask is also created.
+
+=== Move generation with blocker isolation:
+The engine isolates the correct directional mask to use at runtime, and uses `pop_lsb` or `pop_msb` to lookup the blocking square and get the correct `BETWEEN` mask to iterate over when adding viable squares the sliding piece can move to (Brian Kernighan's algorithm.
+
+=== Stack‑allocated moves:
+Move generation utilizes stack-allocated `ArrayVec<ChessMove, 128>`. While the theoretical maximum branching factor in chess is 218, empirical average branching is $approx 30$. A 128-element capacity prevents heap fragmentation and allocator bottlenecks while safely encompassing $>99.9\%$ of reachable states. Moves are stored in ChessPosition itself, to easily decompose into available squares to select pieces from, and available destinations given a selected piece for both select and move nodes.
+
+=== Zobrist hashing:
+To detect three-fold repetitions and cache MCTS evaluations, the engine implements Zobrist Hashing. A static table of pseudo-random 64-bit integers is generated and initialised via OnceLock. The hash of any state is the `XOR` sum of the keys corresponding to the pieces, castling rights, and en-passant files. Currently, the implementation suffers from $O(P)$ time complexity calculation from scratch where $P$ is the number of pieces on the board, as opposed to $O(1)$ for incremental updates. This trade off was made for ease of implementation.
+
+== Bipartite Monte Carlo Tree Search
+Standard MCTS implementations for chess utilize a unipartite node structure where edges represent complete moves (e.g., $"e2e4"$). To explicitly model the autoregressive two-pass network, a bipartite MCTS was engineered. The tree strictly alternates between `PieceSelect` nodes (state $s$) and `PieceMove` nodes (state $s$ + origin square $u$). This guarantees the search topology perfectly mirrors the factored action space, allowing the network's intermediate spatial reasoning to be cached and traversed
+
+== Node and edge types:
+To handle the two-pass architecture efficiently, the network processes both `PieceSelect` and `PieceMove` inputs identically. The only distinction is the presence of a single active bit in the 14th plane (the selected square) during the second pass.
 ```rust
-pub fn pop_lsb(&mut self) -> Option<ChessSquare> {
-    let sq = self.lsb_square()?;
-    self.0 &= self.0 - 1; // Clears the lowest set bit in O(1)
-    Some(sq)
+enum MctsNode {
+    PieceSelect { data: NodeData },
+    PieceMove { data: NodeData, from_sq: ChessSquare },
 }
 ```
-and its MSB variant for instant lookups of blocking pieces given a bitboard and a mask.
-Masks are precomputed directional rays (e.g., `ROOK_ATTACKS` split into cardinal directions) evaluated at compile time using `const fn`. The engine isolates the correct directional mask to use at runtime, and uses `pop_lsb` or `pop_msb` to lookup the blocking square and find the correct `BETWEEN` mask to iterate over when adding viable squares the sliding piece can move to.
+This bipartite structure explicitly models the two-pass autoregressive nature of the network. A `PieceSelect` node transitions via an edge (the origin square) to a `PieceMove` node, which transitions via an edge (the destination square) to the next `PieceSelect` node. This guarantees that the MCTS topology perfectly mirrors the factored action space $P("from"|s) times P("to"|s, "from")$.
 
-=== Stack-Allocated Move Generation
-(`ArrayVec`)
-=== Ray-Casting via Precomputed Masks and Blocker Isolation
-== Bipartite MCTS Implementation
-=== Arena Allocation
-(`node_arena`, `edge_arena`, `position_arena`)
-=== Parallel Traversal and Batched GPU Inference
-(`expand_batch`)
-=== Handling Promotions
-(Dynamic edge expansion)
+== Arena allocators:
+Each MCTS is initialised from a `ChessGame` with 3 pre-allocated Vecs serving as arenas for Nodes, Edges and Positions. Due to the bipartite nature of the search tree, consecutive Select and Move nodes have the same chess position, differing only in selected piece. As such, a separate position arena is used to halve memory consumption. As each game instance has their own MCTS, operations can be easily parallelised without mutexes.
+
+== Node expansion:
+add leaf node... terminal state 3 fold repetition and stuff, look the pseudo code
+#pseudocode-list(booktabs: true, title: smallcaps("Leaf Node Addition and Evaluation"))[
+  *Algorithm:* Leaf Node Addition and Evaluation
+
+  + *Input:* Edge index $e$ to be expanded
+  + *Path Tracking:*
+    + Initialize $H$ (path hashes) with current Root position hash.
+    + *For each* node in the current selection path:
+      + *If* node is `PieceSelect`: Add position Zobrist hash to $H$.
+
+  + *Validation:*
+    + *If* $e$ already points to a child node: *Return* None.
+
+  + *State Transition Logic:*
+    + Let $P$ be the parent node of $e$.
+    + *If* $P$ is a `PieceSelect` node:
+      + Create `PieceMove` node (storing selected square).
+      + Link $e$ to the new node and *Return*.
+
+    + *Else if* $P$ is a `PieceMove` node:
+      + *State Generation:*
+        + Retrieve board from $P$; apply move defined by $e$.
+        + Compute new Zobrist hash $h_"new"$.
+      + *Repetition Detection:*
+        + Count occurrences of $h_(n e w)$ in global history and local path $H$.
+        + *If* count $\ge 2$: Set state to `Finished(Draw)`.
+        + *Else*: Set state to `check_game_state()`.
+
+      + *Arena Integration:*
+        + *If* $h_(n e w)$ exists in `position_arena`: Reuse index.
+        + *Else*: Push new position to arena and use new index.
+
+      + *Terminal Evaluation:*
+        + Create `PieceSelect` node.
+        + *If* state is `Finished`:
+          + Mark node as *Terminal*.
+          + Map reward vector $[W, D, L]$ relative to current side-to-move.
+
+      + Link $e$ to final node and *Return*.
+]
+
+=== Value Propagation:
+```rust
+pub fn backprop(&mut self, value: [f32; 3], color: Color) {
+    self.path.iter().for_each(|&idx| {
+        let edge = &mut self.edge_arena[idx];
+
+        let parent = &self.node_arena[edge.parent_node_idx];
+        let position = &self.position_arena[parent.get_data().chess_position_idx];
+        let side_to_move = position.side_to_move;
+
+        let value = if color != side_to_move { [value[2], value[1], value[0]] } else { value };
+
+        edge.total_value[0] += value[0];
+        edge.total_value[1] += value[1];
+        edge.total_value[2] += value[2];
+        edge.visits += 1;
+        edge.mean_value =
+            [edge.total_value[0] / edge.visits as f32, edge.total_value[1] / edge.visits as f32, edge.total_value[2] / edge.visits as f32];
+        self.node_arena[edge.parent_node_idx].get_data_mut().visits += 1;
+    });
+}
+```
+
+=== Promotion splitting:
+The engine detects when a promotion occurs, and creates 4 edges dividing the prior equally between them, before creating the leaf nodes and positions with promotion piece. The network considers promotion as a single move, rather than 4 distinct moves.
+
+#pseudocode-list(booktabs: true, title: smallcaps("Bipartite MCTS Expansion and State Transition"))[
+  *Algorithm:* Promotion handling
+  + *If* node == PieceMove
+    + *If* side_to_move is `Black`; flip square
+    + *If* move is promotion; Push edges with promotion piece to Edge Arena dividing prior among edges equally
+      + *Else* Push edge without promotion piece
+  + *Else* add Edge
+]
+
+=== PUCT and edge selection:
+the custom Q = W − L − 0.05D, and the PUCT formula with exploration constant. Include the select_best_edge function or a snippet.
+
+=== Mask application and renormalisation:
+During node expansion, the same mask used to zero out logits in masked configurations is reused (or used for the first time in unmasked configurations) to decide which edges to add to the node, to prevent invalid state transitions.
+In unmasked configurations, policies are renormalised over valid squares to maintain mathematical integrity in PUCT calculations.
+```rust
+if !config.masked {
+    policy.iter_mut().for_each(|e| e.1 = e.1 / (1.0 - rate) as f32);
+}
+```
+where rate is total prior in invalid squares.
+
+In masked configurations, logits are set to -1e9. 
+```rust
+if let Some(masks) = masks {
+    let mask_data = TensorData::new(masks, [batch_size, 64]);
+    let mask = Tensor::<B, 2, Bool>::from_data(mask_data, device);
+    let mask = mask.bool_not();
+
+    policies = policies.clone().mask_fill(mask, -1e9);
+}
+```
+in unmasked configurations, output distribution is renormalised over valid squares.
+```rust
+let rate: f64 = mask.iter().zip(policy.iter()).map(|(legal, policy)| if !legal { policy.1 as f64 } else { 0.0 }).sum();
+if !config.masked {
+    policy.iter_mut().for_each(|e| e.1 = e.1 / (1.0 - rate) as f32);
+}
+```
+
+=== PUCT and edge selection
+#pseudocode-list(booktabs: true, title: smallcaps("Edge Selection"))[
+  + *Function* select_best_edge(node_idx):
+    + node $arrow$ self.node_arena[node_idx]
+    + *if* node.child_edge_range is None *then*
+      + *return* None
+    + *end*
+    + (start, end) $arrow$ node.child_edge_range
+    + $N$ $arrow$ node.visits
+    + max_score $arrow -infinity$
+    + best_edge $arrow$ None
+    + *for* each edge_idx *from* start *to* end:
+      + edge $arrow$ self.edge_arena[edge_idx]
+      + $(w, d, l) arrow$ edge.mean_value
+      + exploitation $arrow w - l - 0.05 dot d$
+      + exploration $arrow$ edge.confidence $dot$ config.c_puct $dot$ frac(sqrt(N) + 10^(-8), 1 + edge.visits)
+      + total_score $arrow$ exploitation + exploration
+      + *if* total_score $>$ max_score *then*
+        + max_score $arrow$ total_score
+        + best_edge $arrow$ edge_idx
+      + *end*
+    + *end*
+    + *return* best_edge
+]
+
+=== Parallel search:
+Self-play throughput is maximized by parallelizing MCTS rollouts across the batch size. Using the `rayon` crate, the system executes tree traversals concurrently (`mctss.par_iter_mut()`). Because the Arena Allocator isolates each MCTS instance in contiguous memory, data races are structurally impossible, and cache invalidation is minimized.
+
 == Neural Network and Tensor Formulation
-=== Burn Framework Integration
-(WGPU/CUDA backend agnostic)
-=== State Canonicalization
-(Perspective flipping at the tensor boundary)
-=== The Dual-Pass Forward Mechanism
-== Training Pipeline and Dynamic Curriculum
-=== The Self-Annealing Loss Function
-(Explicitly define $lambda$)
-=== Policy Renormalization for Unmasked PUCT
-=== Replay Buffer Dynamics and Asynchronous Self-Play
+=== State canonicalisation:
+The board is canonicalized to the perspective of the side-to-move when making tensors. This halves the required state-space exploration for the network.
+```rust
+NetworkInputs::from_position(position: &ChessPosition, selected_sq: Option<&ChessSquare>) -> Self {
+    let (chess_board, castling_rights, ep_sq) = if position.side_to_move == Color::White {
+        (position.chessboard.clone(), position.castling_rights, position.en_passant)
+    } else {
+        (position.chessboard.flip_board(), position.castling_rights.flip_perspective(), position.en_passant.map(|x| x.square_opposite()))
+    };
+    ...
+}
+```
 
+=== Input tensor layout:
+```rust
+pub fn inputs_to_tensor<B: Backend>(buffer: &Vec<NetworkInputs>, device: &B::Device) -> (Tensor<B, 3>, Tensor<B, 2>) {
+    let n = buffer.len();
+
+    let mut boards = Vec::with_capacity(n * 64 * 14);
+    let mut metas = Vec::with_capacity(n * 5);
+
+    for item in buffer {
+        boards.extend_from_slice(&item.boards);
+        metas.extend_from_slice(&item.meta);
+    }
+
+    let shape = [n, 64, 14];
+    let board_data = TensorData::new(boards, shape);
+    let t1 = Tensor::from_data(board_data, device);
+
+    let shape = [n, 5];
+    let meta_data = TensorData::new(metas, shape);
+    let t2 = Tensor::from_data(meta_data, device);
+
+    (t1, t2)
+}
+```
+The spatial tensor $X in RR^(64 times 14)$ reserves the 14th plane for the selected piece. During a `PieceSelect` node evaluation, this plane is strictly zeroed. 
+
+=== Two‑pass forward:
+The network executes two forward passes using shared weights. The policy head outputs $P("from"|s)$. During a `PieceMove` node evaluation, the index of the selected square is set to $1.0$ in the 14th plane. The network re-evaluates the state, outputting $P("to"|s, "from")$. This mechanism forces the attention layers to dynamically shift focus from global piece evaluation to localized kinematic projection based solely on the presence of the 14th plane.
+
+=== Transformer architecture:
+list the layers (piece_encoder, meta_encoder, positional embedding, transformer encoder, policy/value heads). Include the forward method that concatenates the meta‑token as a [CLS] token. Show the 2D positional encoding code.
+
+```rust
+// 2D Positional Encoding
+let x_emb = self.pos_embedding_x.forward(self.coordinates.clone()).unsqueeze_dim(1);
+let y_emb = self.pos_embedding_y.forward(self.coordinates.clone()).unsqueeze_dim(2);
+let pos_flat = (x_emb + y_emb).reshape([1, 64, self.d_model]);
+x = x + pos_flat;
+
+// Meta-token concatenation (Pseudo-[CLS] token)
+let meta_x = self.meta_encoder.forward(meta).unsqueeze_dim(1);
+let x = Tensor::cat(vec![x, meta_x], 1);
+```
+
+=== Output processing:
+the policy head outputs 64 logits → softmax; value head outputs 3 logits → softmax. Mention the model_make_outputs utility that optionally masks logits and returns NetworkLabels.
+
+== Training Pipeline
+=== Self‑play loop (play()):
+give a high‑level walkthrough of the outer loop. Use a flowchart or numbered steps: initialise MCTS and games → for each step in iteration → traverse MCTS → expand batch using model → select best move → generate training sample → push to replay buffer → every steps_per_iter iterations, perform gradient steps.
+
+=== Expand batch (expand_batch):
+explain how masks are gathered, network inference is batched, edges are created, and Dirichlet noise is added at the root. Show the core code that creates edges (including promotion splitting) and updates the node’s child_edge_range.
+
+=== Replay buffer:
+describe the FIFO buffer, its size (524k samples), and the ChessBatcher that constructs tensors from sampled TrainingSamples.
+
+The `ChessBatcher` constructs the input tensors dynamically given a slice of training samples randomly sampled from the replay buffer. The spatial tensor $X in RR^(B times 64 times 14)$ is populated by writing to flat `Vec<f32>` before being turned into tensors and reshaped.
+
+Generated trajectories are pushed to a First-In-First-Out (FIFO) `ReplayBuffer` with a capacity of 524,288 samples. With a batch size of 256, the buffer saturates after approximately 2,048 moves. Assuming an average game length of 96 plies, the buffer contains data from the most recent $\sim 5,400$ games. This capacity was explicitly chosen to balance data freshness (preventing the network from overfitting to outdated policies) with sufficient historical context to stabilize the gradients.
+
+=== Self‑annealing loss:
+In unmasked configurations, the network must learn environmental constraints via gradient descent. This is achieved through a dynamic, self-annealing loss function. Let $lambda$ represent the average probability mass assigned to illegal moves across a batch. The loss is defined as:
+$L = L_{"policy"}(1 + lambda) + L_"value" (1 - lambda)$
+
+When the network acts randomly ($lambda approx 1$), the value loss is suppressed, forcing the optimizer to prioritize kinematic legality. As the policy converges on $A_L(s)$ ($lambda approx 0$), the weights balance, allowing strategic value evaluation to propagate. This acts as an automated curriculum, implemented directly within the `ChessTransformer::calculate_loss` method.
+
+=== Optimiser and LR schedule:
+briefly state AdamW with Noam scheduler (warmup 4000 steps) and weight decay. You can reference the configuration struct.
+
+== Performance and Correctness
+=== Correctness:
+mention unit tests for move generation, perft‑like validation (i didnt do this).  describe the test strategy (e.g., comparing move counts to known perft numbers for a few FENs) than claim full verification.
+
+=== Profiling and throughput:
+report the number of MCTS simulations per second on your hardware, the average inference batch throughput, and memory usage per MCTS instance. network inference is primary bottleneck
+
+=== Scalability:
+mention that the arena‑based design allowed near‑linear scaling with the number of parallel games.
+
+== Summary
+A short paragraph recapping the key implementation contributions: the bipartite MCTS, the two‑pass network with canonicalised input, the self‑annealing loss, and the efficient Rust engine.
 // ========================================== // CHAPTER 5: Results // ==========================================
 = Results and Evaluation
 == Experimental Setup
