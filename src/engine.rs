@@ -1,4 +1,5 @@
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
+use burn::tensor;
 use burn::{
     Tensor,
     config::Config,
@@ -211,7 +212,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 
             for (sample, _) in new_samples {
                 if let Some(sample) = sample {
-                    info!("{}", sample);
+                    // info!("{}", sample);
                     replay_buffer.push(sample);
                 }
             }
@@ -225,7 +226,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
 
         let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
         let avg_illegal_prob = illegal_move_weight / total_batches;
-        info!("illegal weight: {}\ntotal_batches: {}", illegal_move_weight, total_batches);
+        // info!("illegal weight: {}\ntotal_batches: {}", illegal_move_weight, total_batches);
 
         let mut loss_val: f32 = 0.0;
         for epoch in 0..training_config.gradient_steps {

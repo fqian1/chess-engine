@@ -22,6 +22,7 @@
         buildInputs = [
           rustNightly
           pkgs.cargo-public-api
+          pkgs.tinymist
           pkgs.cargo-watch
           pkgs.cudaPackages.cudatoolkit
           pkgs.linuxPackages.nvidia_x11

@@ -19,7 +19,7 @@ impl fmt::Display for NetworkInputs {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
         let pieces = ['p', 'n', 'b', 'r', 'k', 'q', 'P', 'N', 'B', 'R', 'K', 'Q', 'e', 'X'];
-        
+
         output.push_str("  a b c d e f g h\n");
         output.push_str("  ----------------\n");
 
@@ -42,7 +42,7 @@ impl fmt::Display for NetworkInputs {
             }
             output.push('\n');
         }
-        
+
         output.push_str("  ----------------\n");
         output.push_str(&format!("Meta: {:?}\n", self.meta));
         write!(f, "{}", output)
@@ -180,8 +180,8 @@ pub struct ChessBatch<B: Backend> {
     pub loss_ratio: f32,
 }
 
-impl<B: Backend> Batcher<B, TrainingSample, ChessBatch<B>> for ChessBatcher {
-    fn batch(&self, items: Vec<TrainingSample>, device: &B::Device) -> ChessBatch<B> {
+impl<B: Backend> Batcher<B, &TrainingSample, ChessBatch<B>> for ChessBatcher {
+    fn batch(&self, items: Vec<&TrainingSample>, device: &B::Device) -> ChessBatch<B> {
         let n = items.len();
 
         let mut boards = Vec::with_capacity(n * 64 * 14);
@@ -206,7 +206,7 @@ impl<B: Backend> Batcher<B, TrainingSample, ChessBatch<B>> for ChessBatcher {
         let policy_targets = Tensor::from_data(pol_target, device);
         let value_targets = Tensor::from_data(val_target, device);
 
-        let loss_ratio = 0.7;
+        let loss_ratio = 0.0;
 
         ChessBatch { boards, metas, policy_targets, value_targets, loss_ratio }
     }
@@ -238,8 +238,8 @@ impl ReplayBuffer {
             panic!("not enough food in buffer");
         }
 
-        info!("sampling: {}", self.buffer[rng.random_range(0..self.buffer.len())].targets);
-        let samples: Vec<TrainingSample> = self.buffer.sample(rng, batch_size).cloned().collect();
+        // info!("sampling: {}", self.buffer[rng.random_range(0..self.buffer.len())].targets);
+        let samples: Vec<&TrainingSample> = self.buffer.sample(rng, batch_size).collect();
         let batcher = ChessBatcher {};
         batcher.batch(samples, device)
     }

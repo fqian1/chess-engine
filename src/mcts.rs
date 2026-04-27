@@ -1,4 +1,5 @@
 use core::fmt;
+use arrayvec::ArrayVec;
 use log::info;
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma};
@@ -430,7 +431,7 @@ impl Mcts {
         let gamma = Gamma::new(alpha, 1.0).unwrap();
         let mut rng: SmallRng = rand::make_rng();
 
-        let noise: Vec<f32> = self.edge_arena[start..end].iter().map(|_| gamma.sample(&mut rng) as f32).collect();
+        let noise: ArrayVec<f32, 32> = self.edge_arena[start..end].iter().map(|_| gamma.sample(&mut rng) as f32).collect();
 
         let total_noise: f32 = noise.iter().sum();
 
@@ -551,6 +552,13 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
     });
 
     let outputs: Vec<NetworkLabels> = model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
+    // if cfg!(debug_assertions) {
+    //     let mut avg_val: (f32, f32, f32) = outputs.iter().map(|e| (e.value[0], e.value[1],e.value[2])).reduce(|acc, e| (acc.0 + e.0, acc.1 + e.1, acc.2 + e.2)).unwrap();
+    //     avg_val.0 /= outputs.len() as f32;
+    //     avg_val.1 /= outputs.len() as f32;
+    //     avg_val.2 /= outputs.len() as f32;
+    //     println!("{:?}", avg_val);
+    // }
 
     let illegal_rate: f64 = mctss
         .par_iter_mut()
@@ -572,6 +580,7 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             let rate: f64 = mask.iter().zip(policy.iter()).map(|(legal, policy)| if !legal { policy.1 as f64 } else { 0.0 }).sum();
 
             // info!("\n{}", output);
+            info!("{}", position);
 
             if !config.masked {
                 // normalise policy distribution if unmasked

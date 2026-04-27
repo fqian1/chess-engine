@@ -237,7 +237,7 @@ impl ChessPosition {
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
-        let moving_piece = self.chessboard.get_piece_at(mov.from).expect(&format!("No piece at from sq {}\n{}", mov.from, self));
+        let moving_piece = self.chessboard.get_piece_at(mov.from).unwrap_or_else(|| panic!());
         let captured_piece = self.chessboard.get_piece_at(mov.to);
 
         let mut rights_to_remove = CastlingRights::empty();
