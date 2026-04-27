@@ -16,8 +16,9 @@ use log::info;
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
-use std::fs::{OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::PathBuf;
 
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,
@@ -106,20 +107,35 @@ pub fn inputs_to_tensor<B: Backend>(buffer: &Vec<NetworkInputs>, device: &B::Dev
     (t1, t2)
 }
 
-pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, training_config: &TrainingConfig, device: &B::Device) {
+pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, training_config: &TrainingConfig, device: &B::Device) {
     let mut model: ChessTransformer<B> = training_config.model.init(device);
 
-    if std::fs::exists(&artifact_dir).expect("failed to read fs") {
-        println!("found model in {}", &artifact_dir);
-        let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
-        let record = recorder.load(artifact_dir.into(), device).expect("Failed to load existing model record");
-
-        model = model.load_record(record);
+    let artifact_dir = if path_arg.is_file() {
+        path_arg.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf()
     } else {
-        println!("creating directory: {}", artifact_dir);
+        path_arg.clone()
+    };
+
+    if !artifact_dir.exists() {
+        println!("Creating directory: {:?}", artifact_dir);
         std::fs::create_dir_all(&artifact_dir).expect("Failed to create artifact directory");
     }
 
+    if path_arg.exists() && (path_arg.is_file() || path_arg.to_str().map_or(false, |s| s.ends_with(".mpk"))) {
+        println!("Loading model from: {:?}", path_arg);
+
+        let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
+
+        let load_path = if path_arg.extension().map_or(false, |ext| ext == "mpk") {
+            &path_arg.with_extension("")
+        } else {
+            path_arg
+        };
+
+        let record = recorder.load(load_path.into(), device).expect("Failed to load existing model record");
+
+        model = model.load_record(record);
+    }
     B::seed(device, training_config.seed);
 
     let mut replay_buffer = ReplayBuffer::new(524288);
@@ -130,7 +146,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
     let mut rng = SmallRng::seed_from_u64(training_config.seed);
     let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
 
-    let csv_path = format!("{}/metrics.csv", artifact_dir);
+    let csv_path = format!("{}/metrics.csv", artifact_dir.to_str().unwrap_or("./tmp"));
     let mut csv_file = OpenOptions::new().create(true).append(true).open(&csv_path).unwrap();
     if std::fs::metadata(&csv_path).unwrap().len() == 0 {
         writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
@@ -231,12 +247,12 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         let mut loss_val: f32 = 0.0;
         for epoch in 0..training_config.gradient_steps {
             info!("Training model: epoch {}", epoch);
-            let (new_model, val) = train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
+            let (new_model, val) =
+                train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
             model = new_model;
             loss_val += val;
         }
         loss_val /= training_config.gradient_steps as f32;
-
 
         writeln!(
             csv_file,
@@ -254,7 +270,7 @@ pub fn play<B: AutodiffBackend>(artifact_dir: &str, mcts_config: &MctsConfig, tr
         csv_file.flush().unwrap();
 
         if iterations % 25 == 0 {
-            let snapshot_path = format!("{}/model-{}", artifact_dir, (iterations / 25) % 10);
+            let snapshot_path = format!("{}/model-{}", artifact_dir.to_str().unwrap(), (iterations / 25) % 10);
             info!("Saving model snapshot at: {}", &snapshot_path);
             if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
                 println!("failed to save model: {}", err);
@@ -282,7 +298,6 @@ pub fn train<B: AutodiffBackend>(
     let loss = output.loss;
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
-
 
     let loss_val = loss.clone().into_scalar().to_f32();
     (optimizer.step(lr, model.clone(), grads), loss_val)

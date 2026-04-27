@@ -65,7 +65,7 @@ fn main() {
             path = PathBuf::from(path_str.replacen('~', &home, 1));
         }
     }
-    let artifact_dir = path; // Use the expanded path
+    let artifact_dir = path;
 
     #[cfg(feature = "cuda")]
     pub type MyInferenceBackend = burn::backend::Cuda<f32, i32>;
@@ -74,8 +74,6 @@ fn main() {
     pub type MyInferenceBackend = burn::backend::Wgpu<f32, i32>;
 
     type MyAutodiffBackend = Autodiff<MyInferenceBackend>;
-
-    let artifact_dir_str = artifact_dir.to_str().unwrap_or("tmp/stats/");
 
     let device = Default::default();
 
@@ -113,10 +111,10 @@ fn main() {
         match input.as_str() {
             "1" => {
                 println!("Using config: \n{:?}\n{:?}", training_config, mcts_config);
-                println!("artifact dir: {:?}", artifact_dir_str);
+                println!("artifact dir: {:?}", artifact_dir);
                 println!("backend: {}", std::any::type_name::<MyInferenceBackend>());
 
-                play::<MyAutodiffBackend>(&artifact_dir_str, &mcts_config, &training_config, &device);
+                play::<MyAutodiffBackend>(&artifact_dir, &mcts_config, &training_config, &device);
             }
             "2" => {
                 println!("Enter fen string: ");
