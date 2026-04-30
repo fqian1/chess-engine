@@ -236,10 +236,6 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
             // info!("Replay Buffer size: {}", replay_buffer.buffer.len());
         }
 
-        if replay_buffer.buffer.len() < 32768 {
-            continue;
-        }
-
         let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
         let avg_illegal_prob = illegal_move_weight / total_batches;
         // info!("illegal weight: {}\ntotal_batches: {}", illegal_move_weight, total_batches);
@@ -270,10 +266,18 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         csv_file.flush().unwrap();
 
         if iterations % 25 == 0 {
-            let snapshot_path = format!("{}/model-{}", artifact_dir.to_str().unwrap(), (iterations / 25) % 10);
-            info!("Saving model snapshot at: {}", &snapshot_path);
-            if let Err(err) = model.clone().save_file(snapshot_path, &recorder) {
-                println!("failed to save model: {}", err);
+            let snapshot_index = (iterations / 25) % 10;
+            let model_path = format!("{}/model-{}", artifact_dir.to_str().unwrap(), snapshot_index);
+            let optim_path = format!("{}/optim-{}", artifact_dir.to_str().unwrap(), snapshot_index);
+
+            info!("Saving model snapshot at: {}", &model_path);
+
+            if let Err(err) = model.clone().save_file(model_path, &recorder) {
+                eprintln!("failed to save model: {}", err);
+            }
+
+            if let Err(err) = recorder.record(optimizer.to_record(), optim_path.into()) {
+                eprintln!("failed to save optimiser: {}", err);
             }
         }
 
