@@ -12,7 +12,7 @@ use burn::{
     prelude::{Backend, ToElement},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
-use log::info;
+use log::{info, trace};
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
@@ -182,7 +182,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                         let (win, draw) = if color.is_none() { (0.0, 1.0) } else { (1.0, 0.0) };
                         let new_game = 1;
                         *game = ChessGame::default();
-                        *mcts = Mcts::from_game(&game, 10000, *mcts_config);
+                        mcts.refresh(game);
                         return (length, win, draw, new_game);
                     }
                     (0.0, 0.0, 0.0, 0)
@@ -193,6 +193,8 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
             average_game_length += total_length;
             wins += win;
             draws += draw;
+
+            //TODO cull trees
 
             for _count in 0..mcts_config.num_simulations {
                 mctss.par_iter_mut().for_each(|mcts| {
@@ -211,7 +213,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                     let sample = mcts.make_targets();
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
-                        info!("\n{}", game.position);
+                        trace!("\n{}", game.position);
                         // info!("\nSelected move: {}", &mov.to_uci());
                     };
                     // scale draw threshold down after 60 moves
