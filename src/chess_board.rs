@@ -3,6 +3,7 @@ use log::trace;
 use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, Copy, Default)]
+#[repr(align(64))]
 pub struct ChessBoard {
     pub pieces: [[Bitboard; 6]; 2],
     pub white_occupancy: Bitboard,
