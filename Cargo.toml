@@ -25,7 +25,9 @@ arrayvec = "0.7.6"
 burn = { version = "0.21.0-pre.1", features = ["std", "autodiff", "fusion", "train"], default-features = false }
 clap = { version = "4.6.0", features = ["derive"] }
 env_logger = "0.11.10"
+fixedbitset = "0.5.7"
 instant = "0.1.13"
+itertools = "0.14.0"
 log = {version = "0.4.29", features = ["release_max_level_off"]}
 rand = "0.10.0"
 rand_distr = "0.6.0"
