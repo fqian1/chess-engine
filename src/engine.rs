@@ -251,6 +251,10 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
             loss_val += val;
         }
         loss_val /= training_config.gradient_steps as f32;
+        
+        mctss.par_iter_mut().for_each(|mcts| {
+            mcts.garbage_collect();
+        });
 
         writeln!(
             csv_file,

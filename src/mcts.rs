@@ -165,6 +165,9 @@ impl<T: Clone> Arena<T> {
         let mut range = None;
 
         for i in 0..=self.freelist.len().saturating_sub(data.len()) {
+            if data.len() > self.freelist.len() {
+                break;
+            };
             let slice = &self.freelist[i..(i + data.len())];
             if slice.windows(2).all(|w| w[0] + 1 == w[1]) {
                 range = Some((i, i + data.len()));
@@ -204,6 +207,7 @@ pub struct Mcts {
     pub rng: XorShift64,
     pub root: usize,           // node idx
     pub past_hashes: Vec<u64>, // when make move
+    pub dead_nodes: Vec<usize>,
 }
 
 impl Mcts {
@@ -221,8 +225,19 @@ impl Mcts {
         let rng = XorShift64::new(u64::from_le_bytes(*buffer.as_array().expect("something wrong with rng")));
 
         let past_hashes: Vec<_> = game.game_history.iter().map(|game| game.zobrist_hash).collect();
+        let dead_nodes = Vec::new();
 
-        Self { config, node_arena, edge_arena: Arena::<MctsEdge>::new(size * 16), position_arena, rng: rng, path: Vec::new(), root: 0, past_hashes }
+        Self {
+            config,
+            node_arena,
+            edge_arena: Arena::<MctsEdge>::new(size * 16),
+            position_arena,
+            rng: rng,
+            path: Vec::new(),
+            root: 0,
+            past_hashes,
+            dead_nodes,
+        }
     }
 
     pub fn refresh(&mut self, game: &ChessGame) {
@@ -235,6 +250,7 @@ impl Mcts {
         self.edge_arena.freelist.clear();
 
         self.path.clear();
+        self.dead_nodes.clear();
         self.root = 0;
 
         let node =
@@ -305,29 +321,33 @@ impl Mcts {
         });
     }
 
-    pub fn delete_branch(&mut self, root: usize) {
-        if root == self.root || self.node_arena.buffer[root].get_data().is_terminal {
-            return;
-        }
-
-        let mut stack = vec![root];
-        while let Some(node_idx) = stack.pop() {
-            self.node_arena.free(node_idx);
-            let pos_idx = self.node_arena.buffer[node_idx].get_data().chess_position_idx;
-            self.position_arena.free(pos_idx);
-
-            if let Some(range) = self.node_arena.buffer[node_idx].get_data().child_edge_range {
-                for i in range.0..range.1 {
-                    self.edge_arena.free(i);
+    pub fn garbage_collect(&mut self) {
+        info!("garbage collecting {} nodes ({} total)", self.dead_nodes.len(), self.node_arena.buffer.len());
+        while let Some(node) = self.dead_nodes.pop() {
+            let mut stack = vec![node];
+            while let Some(node_idx) = stack.pop() {
+                self.node_arena.free(node_idx);
+                let pos_idx = self.node_arena.buffer[node_idx].get_data().chess_position_idx;
+                if !self.position_arena.freelist.contains(&pos_idx) {
+                    self.position_arena.free(pos_idx);
                 }
 
-                for edge in &self.edge_arena.buffer[range.0..range.1] {
-                    if let Some(child_idx) = edge.child_node_idx {
-                        stack.push(child_idx);
+                if let Some(range) = self.node_arena.buffer[node_idx].get_data().child_edge_range {
+                    for i in range.0..range.1 {
+                        self.edge_arena.free(i);
+                    }
+
+                    for edge in &self.edge_arena.buffer[range.0..range.1] {
+                        if let Some(child_idx) = edge.child_node_idx {
+                            stack.push(child_idx);
+                        }
                     }
                 }
             }
         }
+        info!("positions cleared: {} ({})", self.position_arena.freelist.len(), self.position_arena.buffer.len());
+        info!("nodes cleared: {} ({})", self.node_arena.freelist.len(), self.node_arena.buffer.len());
+        info!("edges cleared: {} ({})", self.edge_arena.freelist.len(), self.edge_arena.buffer.len());
     }
 
     fn add_leaf(&mut self, edge_idx: usize) -> Option<usize> {
@@ -368,7 +388,6 @@ impl Mcts {
                 let repeats = self.past_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count()
                     + path_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count();
 
-                // info!("add_leaf: position ({}) repeated {} times", self.position_arena.len(), repeats);
                 let side_to_move = position.side_to_move;
                 let outcome = if repeats >= 2 {
                     Outcome::Finished(None)
@@ -556,9 +575,10 @@ impl Mcts {
         for i in start..end {
             if i == selected_edge_idx {
                 continue;
-            };
-            if let Some(child_idx) = self.edge_arena.buffer[i].child_node_idx {
-                self.delete_branch(child_idx);
+            } else {
+                if let Some(idx) = self.edge_arena.buffer[i].child_node_idx {
+                    self.dead_nodes.push(idx);
+                }
             }
         }
 
