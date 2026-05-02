@@ -152,7 +152,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
     }
 
-    let _ = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("/home/fqian/downloads/mate_evals.tsv"));
+    model = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("/home/fqian/downloads/mate_evals.tsv")).unwrap();
 
     let mut games_started: u32 = games.len() as u32;
     let mut iterations = 0;
@@ -313,7 +313,7 @@ pub fn pretrain<B: AutodiffBackend>(
     device: &B::Device,
     rng: &mut SmallRng,
     path: &PathBuf,
-) -> io::Result<()> {
+) -> io::Result<ChessTransformer<B>> {
     let file = std::fs::read_to_string(path)?;
     let mut samples = Vec::with_capacity(50000);
 
@@ -371,5 +371,5 @@ pub fn pretrain<B: AutodiffBackend>(
         info!("pre training: {}", i);
     }
 
-    Ok(())
+    Ok(model)
 }
