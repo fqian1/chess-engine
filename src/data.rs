@@ -2,7 +2,7 @@ use core::fmt;
 
 use burn::{
     data::dataloader::batcher::Batcher,
-    tensor::{Tensor, TensorData, backend::Backend},
+    tensor::{Bool, Tensor, TensorData, backend::Backend},
 };
 use rand::{rngs::SmallRng, seq::IndexedRandom};
 

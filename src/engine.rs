@@ -1,3 +1,4 @@
+use burn::data::dataloader::batcher::{Batcher};
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
 use burn::{
     Tensor,
@@ -12,13 +13,15 @@ use burn::{
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
 use log::{debug, info, trace};
+use rand::seq::IndexedRandom;
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::PathBuf;
 
+use crate::{ChessBatcher, Color, TrainingSample};
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,
     chess_game::Outcome,
@@ -148,6 +151,8 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     if std::fs::metadata(&csv_path).unwrap().len() == 0 {
         writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
     }
+
+    let _ = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("/home/fqian/downloads/mate_evals.tsv"));
 
     let mut games_started: u32 = games.len() as u32;
     let mut iterations = 0;
@@ -298,4 +303,73 @@ pub fn train<B: AutodiffBackend>(
     let grads = GradientsParams::from_grads(grads, &model);
 
     (optimizer.step(lr, model.clone(), grads), loss)
+}
+
+pub fn pretrain<B: AutodiffBackend>(
+    model: ChessTransformer<B>,
+    optimizer: &mut OptimizerAdaptor<AdamW, ChessTransformer<B>, B>,
+    scheduler: &mut NoamLrScheduler,
+    config: &TrainingConfig,
+    device: &B::Device,
+    rng: &mut SmallRng,
+    path: &PathBuf,
+) -> io::Result<()> {
+    let file = std::fs::read_to_string(path)?;
+    let mut samples = Vec::with_capacity(50000);
+
+    for line in file.lines() {
+        if samples.len() > 50000 {
+            break;
+        }
+        let parts: Vec<&str> = line.split('\t').collect();
+
+        let fen = parts[0].trim();
+        let eval = parts[1].trim();
+
+        let game = match ChessGame::from_fen(fen) {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
+
+        let eval = match eval {
+            "-1" | "-2" => {
+                if game.position.side_to_move == Color::Black {
+                    [1.0, 0.0, 0.0]
+                } else {
+                    [0.0, 0.0, 1.0]
+                }
+            }
+            "1" | "2" => {
+                if game.position.side_to_move == Color::White {
+                    [1.0, 0.0, 0.0]
+                } else {
+                    [0.0, 0.0, 1.0]
+                }
+            }
+            _ => [0.33, 0.33, 0.33], // should be unreachable
+        };
+
+        let inputs = NetworkInputs::from_position(&game.position, None);
+        let targets = NetworkLabels { policy: [0.0; 64], value: eval };
+
+        let mask = [false; 64]; 
+
+        samples.push(TrainingSample { inputs, targets, mask });
+    }
+
+    let batcher = ChessBatcher {};
+
+    for i in 0..100 {
+        let lr = scheduler.step();
+        let samples: Vec<&TrainingSample> = samples.sample(rng, config.batch_size).collect();
+        let batch = batcher.batch(samples.clone(), device);
+        let output = model.forward_classification(batch, -1.0);
+        let loss = output.loss;
+        let grads = loss.backward();
+        let grads = GradientsParams::from_grads(grads, &model);
+        optimizer.step(lr, model.clone(), grads);
+        info!("pre training: {}", i);
+    }
+
+    Ok(())
 }
