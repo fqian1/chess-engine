@@ -152,7 +152,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
     }
 
-    model = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("/home/fqian/downloads/mate_evals.tsv")).unwrap();
+    model = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("./mate_evals.tsv")).unwrap();
 
     let mut games_started: u32 = games.len() as u32;
     let mut iterations = 0;
