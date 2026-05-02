@@ -393,8 +393,6 @@ impl ChessBoard {
     }
 
     pub fn apply_move(&mut self, mov: &ChessMove, side_to_move: Color, en_passant_sq: Option<ChessSquare>) {
-        trace!("apply_move: --- Start ---");
-        trace!("apply_move: Move: {}", mov.to_uci());
         let moving_piece = self.get_piece_at(mov.from).expect("No piece selected");
         let is_en_passant = moving_piece.piece_type == PieceType::Pawn && en_passant_sq.is_some_and(|sq| sq == mov.to);
 
@@ -429,7 +427,6 @@ impl ChessBoard {
             let rook = ChessPiece::new(side_to_move, PieceType::Rook);
             self.move_piece(rook_from, rook_to, rook);
         }
-        trace!("apply_move: --- End ---");
     }
 
     pub fn get_piece_at(&self, square: ChessSquare) -> Option<ChessPiece> {

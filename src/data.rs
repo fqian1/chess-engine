@@ -233,12 +233,8 @@ impl ReplayBuffer {
     }
 
     pub fn sample_batch<B: Backend>(&self, batch_size: usize, rng: &mut SmallRng, device: &B::Device) -> ChessBatch<B> {
-        if self.buffer.len() <= batch_size {
-            // TODO
-            panic!("not enough food in buffer");
-        }
+        assert!(self.buffer.len() <= batch_size);
 
-        // info!("sampling: {}", self.buffer[rng.random_range(0..self.buffer.len())].targets);
         let samples: Vec<&TrainingSample> = self.buffer.sample(rng, batch_size).collect();
         let batcher = ChessBatcher {};
         batcher.batch(samples, device)

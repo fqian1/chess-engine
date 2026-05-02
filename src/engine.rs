@@ -12,7 +12,7 @@ use burn::{
     prelude::{Backend, ToElement},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
-use log::{info, trace};
+use log::{debug, info, trace};
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
@@ -164,19 +164,10 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let mut illegal_move_weight: f64 = 0.0;
 
         for _ in 0..training_config.steps_per_iter {
-            // if let Some(thing) = games.iter().find(|game| matches!(game.check_game_state(training_config.legal), Outcome::Finished(_))) {
-            //     thing.game_history.iter().for_each(|pos| {
-            //         info!("{}", pos);
-            //     });
-            // }
-
             let (total_length, win, draw, new_games): (f32, f32, f32, u32) = games
                 .par_iter_mut()
                 .zip(mctss.par_iter_mut())
                 .map(|(game, mcts)| {
-                    if game.position.halfmove_clock > 45 {
-                        info!("halfmove clock: {}", game.position.halfmove_clock);
-                    }
                     if let Outcome::Finished(color) = game.check_game_state(training_config.legal) {
                         let length = game.game_history.len() as f32;
                         let (win, draw) = if color.is_none() { (0.0, 1.0) } else { (1.0, 0.0) };
@@ -193,8 +184,6 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
             average_game_length += total_length;
             wins += win;
             draws += draw;
-
-            //TODO cull trees
 
             for _count in 0..mcts_config.num_simulations {
                 mctss.par_iter_mut().for_each(|mcts| {
@@ -213,15 +202,14 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                     let sample = mcts.make_targets();
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
-                        trace!("\n{}", game.position);
-                        // info!("\nSelected move: {}", &mov.to_uci());
+                        debug!("\n{}", game.position);
+                        trace!("\nSelected move: {}", &mov.to_uci());
                     };
                     // scale draw threshold down after 60 moves
                     let draw_threshold = if game.game_history.len() > 60 { 0.75 } else { 0.95 };
                     if sample.1[1] > draw_threshold || game.game_history.len() > 400 {
                         // sample.1 is root value after search, just restart.
                         game.position.halfmove_clock = 200;
-                        // info!("{}", sample.1[1]);
                     }
                     mcts.add_dirichlet_noise(mcts.root);
                     sample
@@ -230,17 +218,16 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
 
             for (sample, _) in new_samples {
                 if let Some(sample) = sample {
-                    // info!("{}", sample);
+                    trace!("{}", sample);
                     replay_buffer.push(sample);
                 }
             }
 
-            // info!("Replay Buffer size: {}", replay_buffer.buffer.len());
+            trace!("Replay Buffer size: {}", replay_buffer.buffer.len());
         }
 
         let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
         let avg_illegal_prob = illegal_move_weight / total_batches;
-        // info!("illegal weight: {}\ntotal_batches: {}", illegal_move_weight, total_batches);
 
         let mut loss_val: f32 = 0.0;
         for epoch in 0..training_config.gradient_steps {

@@ -1,6 +1,6 @@
 use arrayvec::ArrayVec;
 use core::fmt;
-use log::{info, trace};
+use log::{debug, info, trace};
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma};
 use rayon::{
@@ -368,7 +368,6 @@ impl Mcts {
                 let repeats = self.past_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count()
                     + path_hashes.iter().filter(|&hash| hash == &position.zobrist_hash).count();
 
-                // info!("add_leaf: position ({}) repeated {} times", self.position_arena.len(), repeats);
                 let side_to_move = position.side_to_move;
                 let outcome = if repeats >= 2 {
                     Outcome::Finished(None)
@@ -519,7 +518,6 @@ impl Mcts {
 
     pub fn get_move_to_play(&mut self) -> Option<ChessMove> {
         if self.node_arena.buffer[self.root].get_data().is_terminal {
-            info!("root at node idx: {} is terminal", self.root);
             return None;
         }
         let (start, end) = self.node_arena.buffer[self.root].get_data().child_edge_range.unwrap();
@@ -637,13 +635,6 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
     });
 
     let outputs: Vec<NetworkLabels> = model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
-    // if cfg!(debug_assertions) {
-    //     let mut avg_val: (f32, f32, f32) = outputs.iter().map(|e| (e.value[0], e.value[1],e.value[2])).reduce(|acc, e| (acc.0 + e.0, acc.1 + e.1, acc.2 + e.2)).unwrap();
-    //     avg_val.0 /= outputs.len() as f32;
-    //     avg_val.1 /= outputs.len() as f32;
-    //     avg_val.2 /= outputs.len() as f32;
-    //     println!("{:?}", avg_val);
-    // }
 
     let illegal_rate: f64 = mctss
         .par_iter_mut()
@@ -654,17 +645,15 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             let position = &game.get_position(node_idx);
             let (mut policy, value) = (output.as_squares(), output.value);
             let node_to_expand = &game.node_arena.buffer[node_idx];
-            // info!("{}\nterminal: {}", position, node_to_expand.get_data().is_terminal);
             if node_to_expand.get_data().is_terminal {
-                // info!("expand_batch: terminal node, skipping expand");
                 return 0.0;
             }
             assert!(node_to_expand.get_data().child_edge_range.is_none());
 
             let rate: f64 = mask.iter().zip(policy.iter()).map(|(legal, policy)| if !legal { policy.1 as f64 } else { 0.0 }).sum();
 
-            // info!("\n{}", output);
-            trace!("{}", position);
+            trace!("\n{}", output);
+            debug!("{}", position);
 
             if !config.masked {
                 // normalise policy distribution if unmasked
@@ -688,12 +677,12 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                                 if let Some(moves) = position.expand_if_prom(mov) {
                                     for mov in moves {
                                         let edge = MctsEdge::new(sq, score / 4.0, node_idx).with_prom(mov.promotion.unwrap());
-                                        // info!("adding edge: {}", edge);
+                                        trace!("adding edge: {}", edge);
                                         edges.push(edge);
                                     }
                                 } else {
                                     let edge = MctsEdge::new(sq, score, node_idx);
-                                    // info!("adding edge: {}", edge);
+                                    trace!("adding edge: {}", edge);
                                     edges.push(edge);
                                 }
                             }
@@ -702,7 +691,7 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                                     sq = sq.square_opposite();
                                 }
                                 let edge = MctsEdge::new(sq, score, node_idx);
-                                // info!("adding edge: {}", edge);
+                                trace!("adding edge: {}", edge);
                                 edges.push(edge);
                             }
                         }
@@ -726,6 +715,5 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
             rate
         })
         .sum();
-    // info!("{}", illegal_rate);
     (unique, illegal_rate / config.batch_size as f64)
 }
