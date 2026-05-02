@@ -107,7 +107,7 @@ impl ChessSquare {
     }
 
     pub fn colour(self) -> Color {
-        if self.0.trailing_zeros() % 2 == 0 {
+        if self.0.trailing_zeros().is_multiple_of(2) {
             return Color::White;
         }
         Color::Black

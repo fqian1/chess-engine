@@ -1,5 +1,3 @@
-use log::trace;
-
 use super::{Bitboard, ChessMove, ChessPiece, ChessSquare, Color, PieceType};
 
 #[derive(Debug, Clone, Copy, Default)]

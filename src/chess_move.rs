@@ -9,7 +9,7 @@ pub struct ChessMove {
 
 impl ChessMove {
     pub fn new(from: ChessSquare, to: ChessSquare, promotion: Option<PieceType>) -> Self {
-        Self { from, to, promotion: promotion }
+        Self { from, to, promotion }
     }
 
     pub fn with_prom(&self, piece: PieceType) -> Self {

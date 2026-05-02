@@ -1,7 +1,6 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
-use log::trace;
 
 use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome};
 
@@ -60,23 +59,24 @@ impl ChessPosition {
                 from_sq.square_south()
             };
 
-            if let Some(to_sq) = square_ahead {
-                if !self.chessboard.all_pieces.is_set(to_sq) {
-                    add_move(&mut moves, from_sq, to_sq);
-                    if from_sq.rank() == rank_2 {
-                        let square_ahead = if self.side_to_move == Color::White {
-                            to_sq.square_north()
-                        } else {
-                            to_sq.square_south()
-                        };
-                        if let Some(to_sq) = square_ahead {
-                            if !self.chessboard.all_pieces.is_set(to_sq) {
-                                let _ = moves.try_push(ChessMove::new(from_sq, to_sq, None));
-                            }
-                        }
+            if let Some(to_sq) = square_ahead
+                && !self.chessboard.all_pieces.is_set(to_sq)
+            {
+                add_move(&mut moves, from_sq, to_sq);
+                if from_sq.rank() == rank_2 {
+                    let square_ahead = if self.side_to_move == Color::White {
+                        to_sq.square_north()
+                    } else {
+                        to_sq.square_south()
+                    };
+                    if let Some(to_sq) = square_ahead
+                        && !self.chessboard.all_pieces.is_set(to_sq)
+                    {
+                        let _ = moves.try_push(ChessMove::new(from_sq, to_sq, None));
                     }
                 }
             }
+
             // Captures
             let mut attacks = if side == Color::White {
                 ChessBoard::PAWN_ATTACKS_WHITE[from_sq.0 as usize]
@@ -106,10 +106,11 @@ impl ChessPosition {
 
         let mut move_pusher = |from_sq: ChessSquare, ray_bb: [Bitboard; 4]| {
             let mut ray = Bitboard::EMPTY;
-            for i in 0..4 {
-                let mut blockers = ray_bb[i] & self.chessboard.all_pieces;
+
+            for (i, mask) in ray_bb.iter().enumerate() {
+                let mut blockers = mask & self.chessboard.all_pieces;
                 if blockers.is_empty() {
-                    ray |= ray_bb[i]
+                    ray |= *mask
                 } else {
                     let to_sq = if i < 2 { blockers.pop_msb() } else { blockers.pop_lsb() };
                     let to_sq = to_sq.expect("No to_sq found in blockers");
@@ -119,8 +120,9 @@ impl ChessPosition {
                     // for some reason, i made all empty bitboards None, when adjacent squares
                     // should be empty instead, so i have to use unwrap or default
                     ray |= ChessBoard::BETWEEN[from_sq.0 as usize][to_sq.0 as usize].unwrap_or_default()
-                };
+                }
             }
+
             while let Some(to_sq) = ray.pop_lsb() {
                 let _ = moves.try_push(ChessMove::new(from_sq, to_sq, None));
             }
@@ -165,31 +167,25 @@ impl ChessPosition {
             };
             match self.side_to_move {
                 Color::White => {
-                    if self.castling_rights.has(CastlingRights::WHITE_KINGSIDE) {
-                        if clear(ChessSquare::E1, ChessSquare::G1) {
-                            let _ = moves.try_push(ChessMove::new(ChessSquare::E1, ChessSquare::G1, None));
-                        }
+                    if self.castling_rights.has(CastlingRights::WHITE_KINGSIDE) && clear(ChessSquare::E1, ChessSquare::G1) {
+                        let _ = moves.try_push(ChessMove::new(ChessSquare::E1, ChessSquare::G1, None));
                     }
-                    if self.castling_rights.has(CastlingRights::WHITE_QUEENSIDE) {
-                        if !self.chessboard.all_pieces.is_set(ChessSquare::B1) {
-                            if clear(ChessSquare::E1, ChessSquare::C1) {
-                                let _ = moves.try_push(ChessMove::new(ChessSquare::E1, ChessSquare::C1, None));
-                            }
-                        }
+                    if self.castling_rights.has(CastlingRights::WHITE_QUEENSIDE)
+                        && !self.chessboard.all_pieces.is_set(ChessSquare::B1)
+                        && clear(ChessSquare::E1, ChessSquare::C1)
+                    {
+                        let _ = moves.try_push(ChessMove::new(ChessSquare::E1, ChessSquare::C1, None));
                     }
                 }
                 Color::Black => {
-                    if self.castling_rights.has(CastlingRights::BLACK_KINGSIDE) {
-                        if clear(ChessSquare::E8, ChessSquare::G8) {
-                            let _ = moves.try_push(ChessMove::new(ChessSquare::E8, ChessSquare::G8, None));
-                        }
+                    if self.castling_rights.has(CastlingRights::BLACK_KINGSIDE) && clear(ChessSquare::E8, ChessSquare::G8) {
+                        let _ = moves.try_push(ChessMove::new(ChessSquare::E8, ChessSquare::G8, None));
                     }
-                    if self.castling_rights.has(CastlingRights::BLACK_QUEENSIDE) {
-                        if !self.chessboard.all_pieces.is_set(ChessSquare::B8) {
-                            if clear(ChessSquare::E8, ChessSquare::C8) {
-                                let _ = moves.try_push(ChessMove::new(ChessSquare::E8, ChessSquare::C8, None));
-                            }
-                        }
+                    if self.castling_rights.has(CastlingRights::BLACK_QUEENSIDE)
+                        && !self.chessboard.all_pieces.is_set(ChessSquare::B8)
+                        && clear(ChessSquare::E8, ChessSquare::C8)
+                    {
+                        let _ = moves.try_push(ChessMove::new(ChessSquare::E8, ChessSquare::C8, None));
                     }
                 }
             }
@@ -203,10 +199,8 @@ impl ChessPosition {
         if let Some(from_sq) = from_sq {
             assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
-                if !legal || self.is_legal(&mov) {
-                    if from_sq == mov.from {
-                        mask[mov.to.0 as usize] = true;
-                    }
+                if !legal || self.is_legal(&mov) && from_sq == mov.from {
+                    mask[mov.to.0 as usize] = true;
                 }
             });
         } else {
@@ -221,17 +215,13 @@ impl ChessPosition {
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
-        let mut temp_board = self.chessboard.clone();
-        temp_board.apply_move(&mov, self.side_to_move, self.en_passant);
+        let mut temp_board = self.chessboard;
+        temp_board.apply_move(mov, self.side_to_move, self.en_passant);
 
         let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);
         let king_sq = king_bb.msb_square().unwrap();
 
-        if temp_board.is_square_attacked(king_sq, self.side_to_move.opposite()) {
-            return false;
-        } else {
-            return true;
-        }
+        !temp_board.is_square_attacked(king_sq, self.side_to_move.opposite())
     }
 
     pub fn make_move(&mut self, mov: &ChessMove) {
@@ -327,13 +317,11 @@ impl ChessPosition {
         let mut king_bb = self.chessboard.get_piece_bitboard(self.side_to_move, PieceType::King);
         let king_sq = king_bb.pop_lsb().unwrap();
 
-        if legal {
-            if !self.pseudolegal_moves.iter().any(|&mov| self.is_legal(&mov)) {
-                if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
-                    return Outcome::Finished(Some(self.side_to_move.opposite()));
-                } else {
-                    return Outcome::Finished(None);
-                }
+        if legal && !self.pseudolegal_moves.iter().any(|&mov| self.is_legal(&mov)) {
+            if self.chessboard.is_square_attacked(king_sq, self.side_to_move.opposite()) {
+                return Outcome::Finished(Some(self.side_to_move.opposite()));
+            } else {
+                return Outcome::Finished(None);
             }
         }
 
@@ -352,10 +340,8 @@ impl ChessPosition {
         let white_minors = white_bishops | white_knights;
         let black_minors = black_bishops | black_knights;
 
-        if count == 3 {
-            if !white_minors.is_empty() || !black_minors.is_empty() {
-                return Outcome::Finished(None);
-            }
+        if count == 3 && !white_minors.is_empty() || !black_minors.is_empty() {
+            return Outcome::Finished(None);
         }
 
         if count == 4 {
@@ -372,19 +358,17 @@ impl ChessPosition {
                 }
             }
 
-            if black_bishops.count() == 2 {
-                if let (Some(sq1), Some(sq2)) = (black_bishops.pop_msb(), black_bishops.pop_msb()) {
-                    if sq1.colour() == sq2.colour() {
-                        return Outcome::Finished(None);
-                    }
-                }
+            if black_bishops.count() == 2
+                && let (Some(sq1), Some(sq2)) = (black_bishops.pop_msb(), black_bishops.pop_msb())
+                && sq1.colour() == sq2.colour()
+            {
+                return Outcome::Finished(None);
             }
-            if white_bishops.count() == 2 {
-                if let (Some(sq1), Some(sq2)) = (white_bishops.pop_msb(), white_bishops.pop_msb()) {
-                    if sq1.colour() == sq2.colour() {
-                        return Outcome::Finished(None);
-                    }
-                }
+            if white_bishops.count() == 2
+                && let (Some(sq1), Some(sq2)) = (white_bishops.pop_msb(), white_bishops.pop_msb())
+                && sq1.colour() == sq2.colour()
+            {
+                return Outcome::Finished(None);
             }
         }
 

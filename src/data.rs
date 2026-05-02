@@ -4,8 +4,7 @@ use burn::{
     data::dataloader::batcher::Batcher,
     tensor::{Tensor, TensorData, backend::Backend},
 };
-use log::info;
-use rand::{RngExt, rngs::SmallRng, seq::IndexedRandom};
+use rand::{rngs::SmallRng, seq::IndexedRandom};
 
 use crate::{ChessPosition, ChessSquare, Color};
 
@@ -93,7 +92,7 @@ impl NetworkInputs {
 
     pub fn from_position(position: &ChessPosition, selected_sq: Option<&ChessSquare>) -> Self {
         let (chess_board, castling_rights, ep_sq) = if position.side_to_move == Color::White {
-            (position.chessboard.clone(), position.castling_rights, position.en_passant)
+            (position.chessboard, position.castling_rights, position.en_passant)
         } else {
             (position.chessboard.flip_board(), position.castling_rights.flip_perspective(), position.en_passant.map(|x| x.square_opposite()))
         };
@@ -127,9 +126,7 @@ impl NetworkInputs {
         }
 
         let mut meta = [0f32; 5];
-        for i in 0..4 {
-            meta[i] = (castling_rights.0 >> i & 1).into();
-        }
+        meta.iter_mut().enumerate().for_each(|(i, meta)| *meta = (castling_rights.0 >> i & 1).into());
         meta[4] = position.halfmove_clock as f32 / 100.0;
 
         Self { boards: data, meta }
@@ -149,7 +146,7 @@ impl NetworkLabels {
 #[derive(Default, Clone)]
 pub struct ChessBatcher {}
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TrainingSample {
     pub inputs:  NetworkInputs,
     pub targets: NetworkLabels,
@@ -162,12 +159,6 @@ impl fmt::Display for TrainingSample {
         output.push_str(&self.inputs.to_string());
         output.push_str(&self.targets.to_string());
         write!(f, "{}", output)
-    }
-}
-
-impl Default for TrainingSample {
-    fn default() -> Self {
-        TrainingSample { inputs: NetworkInputs::default(), targets: NetworkLabels::default() }
     }
 }
 

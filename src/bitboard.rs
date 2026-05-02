@@ -141,9 +141,7 @@ impl Bitboard {
 
     pub fn to_bool(&self) -> [bool; 64] {
         let mut bools = [false; 64];
-        for i in 0..64 {
-            bools[i] = (self.0 >> i) & 1 != 0;
-        }
+        bools.iter_mut().enumerate().for_each(|(i, bool)| *bool = (self.0 >> i) & 1 != 0);
         bools
     }
 

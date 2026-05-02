@@ -59,11 +59,11 @@ fn main() {
     let args = Args::parse();
 
     let mut path = args.path.clone();
-    if path.starts_with("~") {
-        if let Ok(home) = std::env::var("HOME") {
-            let path_str = path.to_str().unwrap_or("");
-            path = PathBuf::from(path_str.replacen('~', &home, 1));
-        }
+    if path.starts_with("~")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        let path_str = path.to_str().unwrap_or("");
+        path = PathBuf::from(path_str.replacen('~', &home, 1));
     }
     let artifact_dir = path;
 

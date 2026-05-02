@@ -1,5 +1,4 @@
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
-use burn::tensor;
 use burn::{
     Tensor,
     config::Config,
@@ -121,12 +120,12 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         std::fs::create_dir_all(&artifact_dir).expect("Failed to create artifact directory");
     }
 
-    if path_arg.exists() && (path_arg.is_file() || path_arg.to_str().map_or(false, |s| s.ends_with(".mpk"))) {
+    if path_arg.exists() && (path_arg.is_file() || path_arg.to_str().is_some_and(|s| s.ends_with(".mpk"))) {
         println!("Loading model from: {:?}", path_arg);
 
         let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
 
-        let load_path = if path_arg.extension().map_or(false, |ext| ext == "mpk") {
+        let load_path = if path_arg.extension().is_some_and(|s| s == "mpk") {
             &path_arg.with_extension("")
         } else {
             path_arg
@@ -142,7 +141,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     let mut lr_scheduler = training_config.scheduler.init().unwrap();
     let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
     let mut games = vec![ChessGame::default(); training_config.batch_size];
-    let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(&game, 16384, *mcts_config)).collect();
+    let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(game, 16384, *mcts_config)).collect();
     let mut rng = SmallRng::seed_from_u64(training_config.seed);
     let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
 
@@ -234,7 +233,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         for epoch in 0..training_config.gradient_steps {
             info!("Training model: epoch {}", epoch);
             let (new_model, val) =
-                train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
+                train(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
             model = new_model;
             loss_total = loss_total + val;
         }
@@ -281,6 +280,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn train<B: AutodiffBackend>(
     model: ChessTransformer<B>,
     optimizer: &mut OptimizerAdaptor<AdamW, ChessTransformer<B>, B>,

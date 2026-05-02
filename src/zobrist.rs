@@ -38,33 +38,41 @@ pub struct ZobristKeys {
     pub side_to_move: u64,
 }
 
-impl ZobristKeys {
-    pub fn new() -> Self {
-        let mut rng = XorShift64::new(123456789);
+impl Default for ZobristKeys {
+    fn default() -> Self {
+        Self::new(123456789)
+    }
+}
 
-        let mut pieces = [[[0; 64]; 6]; 2];
-        for color in 0..2 {
-            for piece in 0..6 {
-                for sq in 0..64 {
-                    pieces[color][piece][sq] = rng.next();
+impl ZobristKeys {
+    pub fn new(seed: u64) -> Self {
+        let mut rng = XorShift64::new(seed);
+
+        let mut pieces = [[[0u64; 64]; 6]; 2];
+
+        for color in pieces.iter_mut() {
+            for piece_type in color.iter_mut() {
+                for square in piece_type.iter_mut() {
+                    *square = rng.next();
                 }
             }
         }
 
         let mut castling = [0; 16];
-        for i in 0..16 {
-            castling[i] = rng.next();
+        for i in castling.iter_mut() {
+            *i = rng.next();
         }
 
         let mut en_passant = [0; 8];
-        for i in 0..8 {
-            en_passant[i] = rng.next();
+        for i in en_passant.iter_mut() {
+            *i = rng.next();
         }
 
         ZobristKeys { pieces, castling, en_passant, side_to_move: rng.next() }
     }
+
     pub fn get() -> &'static Self {
         static INSTANCE: OnceLock<ZobristKeys> = OnceLock::new();
-        INSTANCE.get_or_init(|| Self::new())
+        INSTANCE.get_or_init(Self::default)
     }
 }

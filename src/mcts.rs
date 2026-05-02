@@ -180,12 +180,12 @@ impl<T: Clone> Arena<T> {
             let buf_start = chunk[0];
             let buf_end = buf_start + data.len();
             self.buffer.splice(buf_start..buf_end, data);
-            return (buf_start, buf_end);
+            (buf_start, buf_end)
         } else {
             let start = self.buffer.len();
             let end = start + data.len();
             self.buffer.append(&mut data);
-            return (start, end);
+            (start, end)
         }
     }
 }
@@ -232,7 +232,7 @@ impl Mcts {
             node_arena,
             edge_arena: Arena::<MctsEdge>::new(size * 16),
             position_arena,
-            rng: rng,
+            rng,
             path: Vec::new(),
             root: 0,
             past_hashes,
@@ -278,13 +278,11 @@ impl Mcts {
             exploitation + exploration
         };
 
-        let idx = (start..end).max_by(|&x, &y| {
+        (start..end).max_by(|&x, &y| {
             let a = calc_puct(x);
             let b = calc_puct(y);
             a.total_cmp(&b)
-        });
-
-        idx
+        })
     }
 
     pub fn get_network_input(&self, node_idx: usize) -> NetworkInputs {
@@ -292,11 +290,11 @@ impl Mcts {
         match node {
             MctsNode::PieceSelect { data } => {
                 let position = &self.position_arena.buffer[data.chess_position_idx];
-                NetworkInputs::from_position(&position, None)
+                NetworkInputs::from_position(position, None)
             }
             MctsNode::PieceMove { data, from_sq } => {
                 let position = &self.position_arena.buffer[data.chess_position_idx];
-                NetworkInputs::from_position(&position, Some(&from_sq))
+                NetworkInputs::from_position(position, Some(from_sq))
             }
         }
     }
@@ -377,7 +375,7 @@ impl Mcts {
                 let new_node = MctsNode::PieceMove { data: NodeData::new(data.chess_position_idx), from_sq: edge.square };
                 let node_idx = self.node_arena.push(new_node);
                 edge.child_node_idx = Some(node_idx);
-                return Some(node_idx);
+                Some(node_idx)
             }
             MctsNode::PieceMove { from_sq, .. } => {
                 let mov = ChessMove::new(*from_sq, edge.square, edge.promotion_piece);
@@ -414,7 +412,7 @@ impl Mcts {
                 let node_idx = self.node_arena.push(new_node);
                 edge.child_node_idx = Some(node_idx);
 
-                return Some(node_idx);
+                Some(node_idx)
             }
         }
     }
@@ -500,17 +498,15 @@ impl Mcts {
                 break;
             }
         }
-        return false;
+        false
     }
 
     pub fn get_mask(&self, node_idx: usize) -> [bool; 64] {
         let node = &self.node_arena.buffer[node_idx];
 
         match node {
-            MctsNode::PieceSelect { data } => return self.position_arena.buffer[data.chess_position_idx].make_mask(self.config.legal, None),
-            MctsNode::PieceMove { data, from_sq } => {
-                return self.position_arena.buffer[data.chess_position_idx].make_mask(self.config.legal, Some(*from_sq));
-            }
+            MctsNode::PieceSelect { data } => self.position_arena.buffer[data.chess_position_idx].make_mask(self.config.legal, None),
+            MctsNode::PieceMove { data, from_sq } => self.position_arena.buffer[data.chess_position_idx].make_mask(self.config.legal, Some(*from_sq)),
         }
     }
 
@@ -592,11 +588,9 @@ impl Mcts {
                 }
                 let hash = self.position_arena.buffer[self.node_arena.buffer[self.root].get_data().chess_position_idx].zobrist_hash;
                 self.past_hashes.push(hash);
-                return Some(ChessMove::new(from_sq, selected_edge.square, None));
+                Some(ChessMove::new(from_sq, selected_edge.square, None))
             }
-            _ => {
-                return None;
-            }
+            _ => None,
         }
     }
 }
@@ -636,14 +630,14 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
                     if position.side_to_move == Color::Black {
                         mask = flip_mask(mask);
                     };
-                    return mask;
+                    mask
                 }
                 MctsNode::PieceMove { from_sq, .. } => {
                     let mut mask = position.make_mask(config.legal, Some(*from_sq));
                     if position.side_to_move == Color::Black {
                         mask = flip_mask(mask);
                     }
-                    return mask;
+                    mask
                 }
             }
         })
@@ -678,7 +672,7 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
 
             if !config.masked {
                 // normalise policy distribution if unmasked
-                policy.iter_mut().for_each(|e| e.1 = e.1 / (1.0 - rate) as f32);
+                policy.iter_mut().for_each(|e| e.1 /= (1.0 - rate) as f32);
             }
 
             let edges: Vec<Vec<MctsEdge>> = mask
