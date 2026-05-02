@@ -45,8 +45,8 @@ impl ChessGame {
         let side_str = parts.next().ok_or("FEN missing side to move")?;
         let castling_str = parts.next().ok_or("FEN missing castling rights")?;
         let ep_str = parts.next().ok_or("FEN missing en passant square")?;
-        let halfmove_clock: u32 = parts.next().ok_or("FEN missing halfmove clock")?.parse().map_err(|_| "missing clock")?;
-        let fullmove_counter: u32 = parts.next().ok_or("FEN missing fullmove counter")?.parse().map_err(|_| "missing counter")?;
+        let halfmove_clock: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let fullmove_counter: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(1);
 
         let mut board_array = [None; 64];
 

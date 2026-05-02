@@ -315,10 +315,10 @@ pub fn pretrain<B: AutodiffBackend>(
     path: &PathBuf,
 ) -> io::Result<ChessTransformer<B>> {
     let file = std::fs::read_to_string(path)?;
-    let mut samples = Vec::with_capacity(50000);
+    let mut samples = Vec::with_capacity(250000);
 
     for line in file.lines() {
-        if samples.len() > 50000 {
+        if samples.len() > 250000 {
             break;
         }
         let parts: Vec<&str> = line.split('\t').collect();
@@ -328,7 +328,10 @@ pub fn pretrain<B: AutodiffBackend>(
 
         let game = match ChessGame::from_fen(fen) {
             Ok(g) => g,
-            Err(_) => continue,
+            Err(e) => {
+                print!("{}",e);
+                continue;
+            }
         };
 
         let eval = match eval {
@@ -356,6 +359,8 @@ pub fn pretrain<B: AutodiffBackend>(
 
         samples.push(TrainingSample { inputs, targets, mask });
     }
+
+    assert!(!samples.is_empty(), "Dataset failed to load");
 
     let batcher = ChessBatcher {};
 
