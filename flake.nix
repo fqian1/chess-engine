@@ -28,6 +28,7 @@
           pkgs.linuxPackages.nvidia_x11
           pkgs.typstyle
           pkgs.flamegraph
+          pkgs.heaptrack
         ];
 
         shellHook = ''

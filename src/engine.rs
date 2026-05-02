@@ -173,6 +173,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                         let (win, draw) = if color.is_none() { (0.0, 1.0) } else { (1.0, 0.0) };
                         let new_game = 1;
                         *game = ChessGame::default();
+                        info!("starting new game");
                         mcts.refresh(game);
                         return (length, win, draw, new_game);
                     }
@@ -229,15 +230,21 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let total_batches = (training_config.steps_per_iter * mcts_config.num_simulations) as f64;
         let avg_illegal_prob = illegal_move_weight / total_batches;
 
-        let mut loss_val: f32 = 0.0;
+        let mut loss_total = Tensor::<B, 1>::zeros([1], device);
         for epoch in 0..training_config.gradient_steps {
             info!("Training model: epoch {}", epoch);
             let (new_model, val) =
                 train(model.clone(), &mut optimizer, &mut lr_scheduler, &training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
             model = new_model;
-            loss_val += val;
+            loss_total = loss_total + val;
         }
-        loss_val /= training_config.gradient_steps as f32;
+
+        mctss.par_iter_mut().for_each(|mcts| {
+            mcts.garbage_collect();
+        });
+
+        let loss_val = loss_total / training_config.gradient_steps as f32;
+        let loss_val = loss_val.into_scalar().to_f32();
 
         writeln!(
             csv_file,
@@ -283,7 +290,7 @@ pub fn train<B: AutodiffBackend>(
     device: &B::Device,
     avg_illegal_prob: f32,
     rng: &mut SmallRng,
-) -> (ChessTransformer<B>, f32) {
+) -> (ChessTransformer<B>, Tensor<B, 1>) {
     let datas: ChessBatch<B> = games.sample_batch(config.batch_size, rng, device);
     let lr = scheduler.step();
 
@@ -292,6 +299,5 @@ pub fn train<B: AutodiffBackend>(
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
 
-    let loss_val = loss.clone().into_scalar().to_f32();
-    (optimizer.step(lr, model.clone(), grads), loss_val)
+    (optimizer.step(lr, model.clone(), grads), loss)
 }
