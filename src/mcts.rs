@@ -429,17 +429,38 @@ impl Mcts {
         self.position_arena.buffer[self.node_arena.buffer[node_idx].get_data().chess_position_idx].clone()
     }
 
-    pub fn make_targets(&mut self) -> (Option<TrainingSample>, [f32; 3]) {
+    pub fn make_targets(&mut self, masked: bool) -> (Option<TrainingSample>, [f32; 3]) {
         let node = &self.node_arena.buffer[self.root];
         let Some((start, end)) = node.get_data().child_edge_range else {
             return (None, [0.0; 3]);
         };
 
         let position = &self.position_arena.buffer[node.get_data().chess_position_idx];
+        let mut mask = [true; 64];
         let inputs = match node {
-            MctsNode::PieceSelect { .. } => NetworkInputs::from_position(position, None),
-            MctsNode::PieceMove { from_sq, .. } => NetworkInputs::from_position(position, Some(from_sq)),
+            MctsNode::PieceSelect { .. } => {
+                if masked {
+                    mask = position.make_mask(self.config.legal, None);
+                }
+                NetworkInputs::from_position(position, None)
+            }
+            MctsNode::PieceMove { from_sq, .. } => {
+                if masked {
+                    mask = position.make_mask(self.config.legal, Some(*from_sq));
+                }
+                NetworkInputs::from_position(position, Some(from_sq))
+            }
         };
+
+        if position.side_to_move == Color::Black {
+            let mut flipped_mask = [false; 64];
+
+            for i in 0..8 {
+                let other = 7 - i;
+                flipped_mask[(i * 8)..(i * 8 + 8)].copy_from_slice(&mask[(other * 8)..(other * 8 + 8)]);
+            }
+            mask = flipped_mask;
+        }
 
         let total_visits = node.get_data().visits;
 
@@ -466,7 +487,7 @@ impl Mcts {
         }
 
         let targets = NetworkLabels { policy: target_policy, value: root_value };
-        (Some(TrainingSample { inputs, targets }), root_value)
+        (Some(TrainingSample { inputs, targets, mask }), root_value)
     }
 
     pub fn traverse_get_terminal(&mut self) -> bool {
@@ -644,12 +665,14 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
         .collect();
 
     // generate outputs
-    let mut mask_in: Vec<bool> = vec![false; config.batch_size * 64];
-    mask_in.par_chunks_mut(64).zip(masks.par_iter()).for_each(|(dest_chunk, src_mask)| {
-        dest_chunk.copy_from_slice(src_mask);
-    });
+    let mut mask_in: Vec<bool> = vec![true; config.batch_size * 64];
+    if config.masked {
+        mask_in.par_chunks_mut(64).zip(masks.par_iter()).for_each(|(dest_chunk, src_mask)| {
+            dest_chunk.copy_from_slice(src_mask);
+        });
+    }
 
-    let outputs: Vec<NetworkLabels> = model_make_outputs(model.clone(), &inputs, config, if config.masked { Some(mask_in) } else { None }, device);
+    let outputs: Vec<NetworkLabels> = model_make_outputs(model.clone(), &inputs, config, mask_in, device);
 
     let illegal_rate: f64 = mctss
         .par_iter_mut()

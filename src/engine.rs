@@ -50,19 +50,17 @@ pub fn model_make_outputs<B: Backend>(
     model: ChessTransformer<B>,
     inputs: &Vec<NetworkInputs>,
     config: &TrainingConfig,
-    masks: Option<Vec<bool>>,
+    masks: Vec<bool>,
     device: &B::Device,
 ) -> Vec<NetworkLabels> {
     let batch_size = config.batch_size;
     let (boards, metas) = inputs_to_tensor(inputs, device);
     let (mut policies, mut values) = model.forward(boards, metas);
-    if let Some(masks) = masks {
-        let mask_data = TensorData::new(masks, [batch_size, 64]);
-        let mask = Tensor::<B, 2, Bool>::from_data(mask_data, device);
-        let mask = mask.bool_not();
 
-        policies = policies.clone().mask_fill(mask, -1e9);
-    }
+    let mask_data = TensorData::new(masks, [batch_size, 64]);
+    let mask = Tensor::<B, 2, Bool>::from_data(mask_data, device);
+    policies = policies.clone().mask_fill(mask.bool_not(), -1e9);
+
     policies = softmax(policies, 1);
     values = softmax(values, 1);
     // batch_size x 64
@@ -199,7 +197,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                 .par_iter_mut()
                 .zip(games.par_iter_mut())
                 .map(|(mcts, game)| {
-                    let sample = mcts.make_targets();
+                    let sample = mcts.make_targets(training_config.masked);
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
                         debug!("\n{}", game.position);

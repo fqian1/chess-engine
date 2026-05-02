@@ -146,10 +146,11 @@ impl NetworkLabels {
 #[derive(Default, Clone)]
 pub struct ChessBatcher {}
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TrainingSample {
     pub inputs:  NetworkInputs,
     pub targets: NetworkLabels,
+    pub mask:    [bool; 64],
 }
 
 impl fmt::Display for TrainingSample {
@@ -169,6 +170,7 @@ pub struct ChessBatch<B: Backend> {
     pub policy_targets: Tensor<B, 2>, // Batch x 64
     pub value_targets: Tensor<B, 2>,  // Batch x 1
     pub loss_ratio: f32,
+    pub masks: Tensor<B, 2, Bool>,
 }
 
 impl<B: Backend> Batcher<B, &TrainingSample, ChessBatch<B>> for ChessBatcher {
@@ -179,27 +181,31 @@ impl<B: Backend> Batcher<B, &TrainingSample, ChessBatch<B>> for ChessBatcher {
         let mut metas = Vec::with_capacity(n * 5);
         let mut targets = Vec::with_capacity(n * 64);
         let mut values = Vec::with_capacity(n * 3);
+        let mut masks = Vec::with_capacity(n * 64);
 
         for item in items {
             boards.extend_from_slice(&item.inputs.boards);
             metas.extend_from_slice(&item.inputs.meta);
             targets.extend_from_slice(&item.targets.policy);
-            values.extend_from_slice(&item.targets.value)
+            values.extend_from_slice(&item.targets.value);
+            masks.extend_from_slice(&item.mask);
         }
 
         let board_data = TensorData::new(boards, [n, 64, 14]);
         let metas_data = TensorData::new(metas, [n, 5]);
         let pol_target = TensorData::new(targets, [n, 64]);
         let val_target = TensorData::new(values, [n, 3]);
+        let mask = TensorData::new(masks, [n, 64]);
 
         let boards = Tensor::from_data(board_data, device);
         let metas = Tensor::from_data(metas_data, device);
         let policy_targets = Tensor::from_data(pol_target, device);
         let value_targets = Tensor::from_data(val_target, device);
+        let masks = Tensor::from_data(mask, device);
 
         let loss_ratio = 0.0;
 
-        ChessBatch { boards, metas, policy_targets, value_targets, loss_ratio }
+        ChessBatch { boards, metas, policy_targets, value_targets, loss_ratio, masks }
     }
 }
 

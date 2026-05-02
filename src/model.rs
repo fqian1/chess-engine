@@ -102,7 +102,8 @@ impl<B: Backend> ChessTransformer<B> {
 
     pub fn forward_classification(&self, batch: ChessBatch<B>, ratio: f32) -> ClassificationOutput<B> {
         let [batch_size, _, _] = batch.boards.dims();
-        let (policy_pred, value_pred) = self.forward(batch.boards.clone(), batch.metas);
+        let (mut policy_pred, value_pred) = self.forward(batch.boards.clone(), batch.metas);
+        policy_pred = policy_pred.clone().mask_fill(batch.masks.bool_not(), -1e9);
         let loss = self.calculate_loss(policy_pred.clone(), value_pred.clone(), batch.policy_targets.clone(), batch.value_targets.clone(), ratio);
         let target_indices = batch.policy_targets.argmax(1).reshape([batch_size]);
         ClassificationOutput::new(loss, policy_pred, target_indices)
