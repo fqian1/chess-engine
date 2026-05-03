@@ -199,7 +199,7 @@ impl ChessPosition {
         if let Some(from_sq) = from_sq {
             assert!(!self.pseudolegal_moves.is_empty());
             self.pseudolegal_moves.iter().for_each(|&mov| {
-                if !legal || self.is_legal(&mov) && from_sq == mov.from {
+                if (!legal || self.is_legal(&mov)) && from_sq == mov.from {
                     mask[mov.to.0 as usize] = true;
                 }
             });
@@ -340,7 +340,7 @@ impl ChessPosition {
         let white_minors = white_bishops | white_knights;
         let black_minors = black_bishops | black_knights;
 
-        if count == 3 && !white_minors.is_empty() || !black_minors.is_empty() {
+        if count == 3 && (!white_minors.is_empty() || !black_minors.is_empty()) {
             return Outcome::Finished(None);
         }
 
