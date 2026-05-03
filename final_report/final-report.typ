@@ -190,7 +190,7 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
 // ========================================== // CHAPTER 1: INTRODUCTION // ==========================================
 = Introduction
 == Project Background
-Modern machine learning often relies on scaling data and compute over opaque architectures. However, these models are frequently decoupled from environment transition dynamics via *Logit Masking*—a heuristic that artificially zeroes out the probability of illegal actions prior to softmax activation. While computationally efficient, this deprives the network of negative feedback for invalid predictions, bypassing the model's need to internally represent the mechanics of play. Furthermore, standard reinforcement learning (RL) agents are prevented from making invalid state transitions by hardcoded environmental constraints. This precludes the observation of how internal action space pruning influences learning before strategic evaluation develops. Chess provides an optimal substrate for this investigation: it presents highly ambiguous intermediate states bound by objective ground truths and a mathematically perfect, yet computationally intractable, solution space.
+Modern machine learning often relies on scaling data and compute over opaque architectures. However, these models are frequently decoupled from environment transition dynamics via *Logit Masking* - a heuristic that artificially zeroes out the probability of illegal actions prior to softmax activation. While computationally efficient, this deprives the network of negative feedback for invalid predictions, bypassing the model's need to internally represent the mechanics of play. Furthermore, standard reinforcement learning (RL) agents are prevented from making invalid state transitions by hardcoded environmental constraints. This precludes the observation of how internal action space pruning influences learning before strategic evaluation develops. Chess provides an optimal substrate for this investigation: it presents highly ambiguous intermediate states bound by objective ground truths and a mathematically perfect, yet computationally intractable, solution space.
 
 == Project Description
 Existing literature rarely assesses the impact of these environmental guardrails on the learning dynamics of transformer-based agents. This project investigates two orthogonal axes of environmental constraint: Action Space Constraints and Logit Masking.
@@ -200,7 +200,7 @@ To facilitate explicit measurement of model interpretability, a custom two-pass 
 The experimental configurations are defined across two axes:
 + *Axis 1: Rule Set Convergence (Action Space Constraints)*
   - *Control:* Training on a strict legal ruleset.
-  - *Test:* Training on a pseudo-legal ruleset where the terminal state is the simpler, denser king capture $(K_"cap")$ over the highly sparse, complex ($A_l = nothing$). This variant of Chess fundamentally alters the MDP reward function to $R(s, a)$ yielding a potentially smoother reward landscape.
+  - *Test:* Training on a pseudo-legal ruleset where the terminal state is the simpler, denser king capture $(K_"cap")$ over the highly sparse, complex ($A_l = nothing$). This variant of Chess fundamentally alters the MDP reward function $R(s, a)$ yielding a potentially smoother reward landscape.
   - *Hypothesis:* The network first bootstraps learning the rules and goals of the environment. Ideal play in the pseudo-legal space $A_P$ may converge to standard Chess where concepts such as pins and checkmates emerge as survival heuristics to prevent or secure king capture. Conversely, the removal of environmental guardrails may degrade MCTS value estimation, preventing policy bootstrapping.
 
 + *Axis 2: Logit Masking*
@@ -313,6 +313,7 @@ _Note on Promotions_: Because the factored $64 -> 64$ architecture lacks a third
 The model uses a Transformer Encoder architecture without spatial inductive biases (e.g., convolutions). The spatial tensor $X$ is linearly projected to $d_"model"$, and $2D$ learned positional embeddings are added to retain geometric context. The meta-tensor $M$ is linearly projected and concatenated as a pseudo-[CLS] token, resulting in a sequence length of 65.
 
 The model is scaled symmetrically:
+
 - $n_"heads" = 8$, $n_"layers" = 8$, $d_"model" = 8 * 64$, $d_"ff" = 8 * 4 * 64$
 
 === Output Heads
@@ -328,9 +329,9 @@ To accomodate the two-pass autoregressive policy, a bipartite MCTS is implemente
 === Selection and PUCT Formulation
 During traversals, edges are selected using a modified Predictor + Upper Confidence Bound applied to Trees (PUCT) algorithm. To mitigate draw-seeking behaviour, a contempt factor is baked into the empirical action value $Q(s, a)$.
 
-- $Q(s, a) = W - L - 0.05D$
-- $U(s, a) = c_"puct"P(s, a) sqrt(sum_b N(s, b))/(1+N(s, a))("Exploration")$
-- $"PUCT"(s, a) = Q(s, a) + U(s, a)$
+$ "Exploitation:" Q(s, a) = W - L - 0.05D $
+$ "Exploration: " U(s, a) = c_"puct"P(s, a) sqrt(sum_b N(s, b))/(1+N(s, a)) $
+$ "PUCT"(s, a) = Q(s, a) + U(s, a) $
 
 where $W, D, L$ are the mean value estimates for the edge, $P(s, a)$ is the prior probability, and $N$ is the visit count.
 
@@ -347,14 +348,13 @@ During MCTS rollouts, invalid state transitions poison the value estimations of 
 The system generates data via highly parallelized self-play. Trajectories are stored in a First-In-First-Out (FIFO) replay buffer with a capacity of 524,288 samples. To prevent infinite games, rollouts are forcibly terminated as draws after 400 plies, or if the root value estimation for a draw exceeds 0.95, scaled to 0.75 in the endgame.
 
 == Optimisation and Loss Function
-The network is optimized using the AdamW optimizer with $beta_1 = 0.9$, $beta_2 = 0.99$ and weight decay = $10^(-4)$. Noam learning rate scheduler is used with a factor of 0.1 and 4000 warmup steps.
+The network is optimized using the AdamW optimizer with $beta_1 = 0.9$, $beta_2 = 0.99$ and weight decay = $10^(-4)$. Noam learning rate scheduler is used with a factor of 0.01 and 4000 warmup steps.
 
-For a given state $s$, let $pi$ be the MCTS visit count distribution, $p$ be the network's policy prediction, $z$ be the simulated game outcome, and $v$ be the network's value prediction. The loss function is defined as:
-$L = (1 + lambda) (- limits(sum)_a pi(a|s) log p(a|s)) plus (1 - lambda) (- limits(sum)_i z_i log v_i)$
+For a given state $s$, let $pi$ be the MCTS visit count distribution, $p$ be the network's policy prediction, $z$ be the MCTS root value distribution, and $v$ be the network's value prediction. The loss function is defined as:
+$ L = (1 + lambda) (- limits(sum)_a pi(a|s) log p(a|s)) plus (1 - lambda) (- limits(sum)_i z_i log v_i) $
+The value head is trained on the MCTS bootstrapped value (TD-like) for computational feasability.
 
 This acts as a strict mathematical curriculum. When the network proposes many illegal moves $lambda approx 1$, the policy loss approaches $2$ and the value loss approaches $0$. The network is forced to learn piece kinematics before state evaluation. As the model internalizes piece kinematics, the weights balance to $1:1$. This approach to curriculum learning is unique to the unmasked configuration, as $lambda$ is dependent on illegal move weights ($lambda$ is always zero in masked configurations).
-
-//TODO talk about td value bootstrapping
 
 == Experimental Design and Evaluation Metrics
 === The Configuration Matrix
@@ -436,13 +436,19 @@ Standard MCTS implementations represent a complete action as a single edge. To m
 
 === Arena Allocators <arenas>
 To avoid the memory fragmentation and pointer-chasing overhead associated with recursive tree structures, the MCTS utilizes flat, index-based arena allocators:
-- `node_arena: Vec<MctsNode>`
-- `edge_arena: Vec<MctsEdge>`
-- `position_arena: Vec<ChessPosition>`
+```rust
+struct Arena<T> {
+    buffer:   Vec<T>,
+    freelist: Vec<usize>,
+}
+```
+- `node_arena: Arena<MctsNode>`
+- `edge_arena: Arena<MctsEdge>`
+- `position_arena: Arena<ChessPosition>`
 
-Nodes reference their children and associated board states via `usize` indices. A dedicated `position_arena` is implemented because consecutive `PieceSelect` and `PieceMove` nodes share identical underlying board states (differing only in the `selected_sq` parameter). This deduplication provides a crucial memory optimization.
+Nodes reference child edges and associated board states via `usize` indices. A dedicated `position_arena` is implemented to prevent deduplication of board state over consecutive `PieceSelect` and `PieceMove` nodes.
 
-*Architectural Limitation:* The index-based arena design exhibits suboptimal memory scaling during deep rollouts. Because indices must remain stable throughout the lifetime of a game, fully explored or abandoned subtrees cannot be easily garbage-collected or culled without invalidating the index space. Consequently, RAM consumption scales disproportionately compared to VRAM during large batch operations, establishing system memory as the primary bottleneck for batch size scaling. Garbage collection methods were considered, but rejected to stay within scope of the project.
+To address memory pressure, arenas are backed by freelists. When subtrees are abandoned (e.g. after a move is chosen), their indices are returned to the freelist. Bulk edge insertion (`push_block`) searches for contiguous free slots. A garbage-collection pass recursively frees all nodes, edges, and board positions of abandoned subtrees asynchronously behind gradient steps. This keeps RAM proportional to the active search tree, enabling larger batch sizes.
 
 === Node Expansion, Promotions and Terminal Handling
 Leaf expansion (@leaf_expansion) transitions the state machine. Expanding a `PieceSelect` edge generates a `PieceMove` node without altering the underlying board state. Expanding a `PieceMove` edge applies the move, computes the new Zobrist hash, evaluates terminal states (including threefold repetition via path history), and generates a new `PieceSelect` node.
@@ -483,6 +489,8 @@ Promotions are handled natively by the bipartite structure, bypassing the need f
   ],
 ) <leaf_expansion>
 
+Draw by 50 move repetition has been shortened to 40 full moves (80 half-moves) to accelerate training.
+
 === Edge Selection and Value Propagation
 During traversal, edge selection utilizes a PUCT variant that penalizes draws to encourage decisive variations. For a node with visit count $N$, an edge $e$ with confidence $p_e$, visits $n_e$, and mean value $(W_e, D_e, L_e)$ obtains a score edge_selection
 
@@ -511,7 +519,8 @@ To enforce symmetric learning, all board states are canonicalized to the perspec
 Tensors are constructed by extending flat `Vec<f32>` slices and reshaping them via Burn's `TensorData` API, ensuring contiguous memory layouts before transfer to the GPU.
 
 === Transformer Encoder and Dynamic Masking
-The architecture utilizes $d_"model" = 512$, $n_"layers" = 8$, and $n_"heads" = 8$. The 64 spatial vectors are linearly projected to $d_"model"$, and 2D learnable positional embeddings are broadcast across the sequence. The metadata vector $M$ is projected and concatenated as a pseudo-[CLS] token, resulting in a $65 times d_"model"$ tensor.
+The architecture utilizes $d_("model") = 512$, $n_("layers") = 8$, and $n_("heads") = 8$. The 64 spatial vectors are linearly projected to $d_("model")$, and $2 times 8$ learnable positional embeddings are broadcast across the grid for rank and file. The metadata vector $M$ is projected and concatenated as a pseudo-[CLS] token, resulting in a $65 times d_("model")$ tensor.
+
 
 Following the transformer layers, the sequence bifurcates:
 - Tokens $0..63$ are passed through a linear policy head to produce 64 spatial logits.
@@ -523,20 +532,20 @@ The model's `forward_classification` method dynamically applies action masking b
 The training pipeline orchestrates data generation, buffer management, and gradient updates, specifically engineered to support the study of rule internalisation.
 
 === Batch Expansion and Synchronisation
-The interface between the CPU-bound MCTS and the GPU-bound neural network is implemented in `expand_batch` (@expand_batch). During the self-play loop, MCTS traversals execute asynchronously across all threads until a leaf node is reached. The threads then synchronize, aggregating the canonicalized input tensors and legal move masks into a single batch. Following a unified forward pass, the resulting `NetworkLabels` (policy and value arrays) are scattered back to their respective MCTS instances for edge expansion and value backpropagation.
+The interface between the CPU-bound MCTS and the GPU-bound neural network is implemented in `expand_batch` (@expand_batch). During the self-play loop, MCTS traversals execute in parallel across all threads until a leaf node is reached. The threads then synchronize, aggregating the canonicalized input tensors and legal move masks into a single batch. Following a unified forward pass, the resulting `NetworkLabels` (policy and value arrays) are scattered back to their respective MCTS instances for edge expansion and value backpropagation.
 
 #figure(
   kind: "algorithm",
   supplement: [Algorithm],
   pseudocode-list(booktabs: true, title: smallcaps("Batched Inference and Prior Renormalisation"))[
     - *Require:* Set of leaf nodes ${n_1, ..., n_B}$, Configuration $C$
-    + $X_"batch", M_"batch" <-$ Extract spatial and meta tensors from ${n_1, ..., n_B}$
+    + $X_"batch", M_"meta" <-$ Extract spatial and meta tensors from ${n_1, ..., n_B}$
+    + $M_"mask" <-$ Generate legal move boolean masks for all $b in B$
     + *if* $C."masked"$ is True *then*
-      + $M_"batch" <-$ Generate legal move boolean masks
+      + $P_"raw", V_"raw" <-$ TransformerForward($X_"batch", M_"meta", M_"mask"$)
     + *else*
-      + $M_"batch" <-$ None
+      + $P_"raw", V_"raw" <-$ TransformerForward($X_"batch", M_"meta", "None"$)
     + *end*
-    + $P_"raw", V_"raw" <-$ TransformerForward($X_"batch", M_"batch", M_"ask_batch"$)
     + *for* $b = 1$ *to* $B$ *do*
       + $lambda <- 0$
       + *if* $C."masked"$ is False *then*
@@ -544,7 +553,7 @@ The interface between the CPU-bound MCTS and the GPU-bound neural network is imp
           + $lambda <- lambda + P_"raw"[b][i]$
         + *end*
         + *for each* legal square $j$ in $n_b$ *do*
-          + $P_"raw"[b][j] <- P_"raw"[b][j] / (1 - lambda)$ // Renormalize
+          + $P_"raw"[b][j] <- P_"raw"[b][j] / (1 - lambda)$
         + *end*
       + *end*
       + $n_b."illegal_mass" <- lambda$
@@ -560,14 +569,14 @@ To facilitate learning in the unmasked configuration, a self-annealing loss func
 Within the `calculate_loss` function, the composite loss is defined as:
 $ L = L_"policy"(1 + lambda) + L_"value"(1 - lambda) $
 
-Where $L_"policy"$ is the cross-entropy of the policy output against MCTS visit counts, and $L_"value"$ is the cross-entropy of the value output against the terminal game outcome. When the network proposes a high volume of illegal moves ($lambda approx 1$), the value gradient is heavily suppressed. This acts as an automated, mathematically rigorous curriculum: the network is forced to optimize for piece kinematics ($L_"policy" approx 2$) before strategic optimisation ($L_"value"$) can commence. As the model internalizes the rules ($lambda -> 0$), the weights naturally balance to a $1:1$ ratio.
+Where $L_"policy"$ is the cross-entropy of the policy output against MCTS visit counts, and $L_"value"$ is the cross-entropy of the value output against the MCTS root value distribution. When the network proposes a high volume of illegal moves ($lambda approx 1$), the value gradient is heavily suppressed. This acts as an automated curriculum: the network is forced to optimize for piece kinematics ($L_"policy" approx 2$) before strategic optimisation ($L_"value"$) can commence. As the model internalizes the rules ($lambda -> 0$), the weights naturally balance to a $1:1$ ratio.
+
+Cross-entropy is calculated via `log_softmax` combined with `(target * probs).sum_dim(1).mean().neg()` to maximize efficiency.
 
 == Performance and Correctness
-Engine throughput is dictated by the interplay between CPU-bound tree search and GPU-bound tensor operations. Profiling indicates that the dominant computational cost is the batched forward pass of the Transformer.
+Engine throughput is dictated by the interplay between CPU-bound tree search and GPU-bound tensor operations. Profiling indicates that the dominant computational cost is the batched forward pass of the Transformer. Arena garbage-collection is hidden behind network training steps. RAM memory usage scales proportionally to vram usage, with usage hovering at 11GB RAM and 10GB VRAM at 256 batch size and simulations.
 
-The strict memory isolation of the MCTS arenas allows CPU scaling to remain perfectly linear until the GPU becomes saturated by the aggregated batch size. However, as noted in @arenas, the inability to cull unreferenced `ChessPosition` structs from the flat arenas results in high memory pressure. For a batch size of 256, concurrent games can consume upwards of 60 GB of system RAM during deep endgames, establishing memory capacity as the primary bottleneck for scaling the number of parallel self-play environments. Despite this, the architecture successfully sustains the high-throughput data generation required to train the four distinct agent configurations under identical hyperparameters.
-
-Move generation is unit tested against multiple positions. Zobrist hashing uses 64 bit keys, providing cryptographic-level collision resistance for the search depth of the training configuration. Tensor shapes are checked at compile-time.
+Move generation is unit tested against multiple standard positions. Zobrist hashing uses 64 bit keys, providing cryptographic-level collision resistance for the search depth of the training configuration. Tensor shapes are checked at compile-time.
 
 // ========================================== // CHAPTER 5: Results // ==========================================
 = Results and Evaluation
