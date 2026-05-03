@@ -230,7 +230,7 @@ impl ReplayBuffer {
     }
 
     pub fn sample_batch<B: Backend>(&self, batch_size: usize, rng: &mut SmallRng, device: &B::Device) -> ChessBatch<B> {
-        assert!(self.buffer.len() <= batch_size);
+        assert!(self.buffer.len() >= batch_size);
 
         let samples: Vec<&TrainingSample> = self.buffer.sample(rng, batch_size).collect();
         let batcher = ChessBatcher {};
