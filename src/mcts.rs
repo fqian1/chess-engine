@@ -563,7 +563,7 @@ impl Mcts {
         let piece_count = self.position_arena.buffer[self.node_arena.buffer[self.root].get_data().chess_position_idx].chessboard.all_pieces.count();
         let temperature = self.config.temperature * ((1.0 / (ply_count + 1) as f32 + (piece_count - 2) as f32 / 30.0) / 2.0);
 
-        let selected_edge_idx = if self.config.temperature > 0.0 {
+        let mut selected_edge_idx = if self.config.temperature > 0.0 {
             let edges = &self.edge_arena.buffer[start..end];
             let inv_temp = 1.0 / temperature;
             let weights: Vec<f32> = edges.iter().map(|e| (e.visits as f32).powf(inv_temp)).collect();
@@ -584,6 +584,11 @@ impl Mcts {
             let picked: usize = (start..end).zip(edges.iter()).max_by(|a, b| a.1.visits.cmp(&b.1.visits)).map(|e| e.0)?;
             picked
         };
+
+        if self.edge_arena.buffer[selected_edge_idx].child_node_idx.is_none() {
+            let edges = &self.edge_arena.buffer[start..end];
+            selected_edge_idx = (start..end).zip(edges.iter()).max_by(|a, b| a.1.visits.cmp(&b.1.visits)).map(|e| e.0)?;
+        }
 
         let old_root = self.root;
         self.root = self.edge_arena.buffer[selected_edge_idx].child_node_idx.expect("not enough sim depth");
