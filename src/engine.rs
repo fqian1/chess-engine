@@ -37,14 +37,12 @@ pub struct TrainingConfig {
     pub legal: bool,
     pub scheduler: NoamLrSchedulerConfig,
     pub optimizer: AdamWConfig,
-    #[config(default = 256)]
+    #[config(default = 64)]
     pub gradient_steps: usize,
-    #[config(default = 256)]
+    #[config(default = 64)]
     pub steps_per_iter: usize,
     #[config(default = 256)]
     pub batch_size: usize,
-    #[config(default = 4)]
-    pub num_workers: usize,
     #[config(default = 1234)]
     pub seed: u64,
 }

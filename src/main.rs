@@ -98,7 +98,6 @@ fn main() {
         gradient_steps: args.gradient_steps,
         steps_per_iter: args.iter_count,
         batch_size: args.batch_size,
-        num_workers: 8,
         seed: args.seed,
     };
 
