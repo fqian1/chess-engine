@@ -32,6 +32,8 @@ struct Args {
     num_simulations: usize,
     #[arg(short, long, default_value_t = 64)]
     iter_count: usize,
+    #[arg(short, long)]
+    annealing: bool,
     #[arg(short, long, default_value_t = 1.0)]
     temperature: f32,
     #[arg(short, long, value_name = "DIR")]
@@ -93,6 +95,7 @@ fn main() {
         model: model_config,
         masked: args.masked,
         legal: args.legal,
+        annealing: args.annealing,
         scheduler: scheduler_config,
         optimizer: optimizer_config,
         gradient_steps: args.gradient_steps,

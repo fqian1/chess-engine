@@ -220,9 +220,7 @@ impl Mcts {
         let mut position_arena = Arena::<ChessPosition>::new(size);
         position_arena.push(game.position.clone());
 
-        let mut buffer = Vec::new();
-        let _ = std::fs::File::open("/dev/urandom").unwrap().take(8).read_to_end(&mut buffer);
-        let rng = XorShift64::new(u64::from_le_bytes(*buffer.as_array().expect("something wrong with rng")));
+        let rng = XorShift64::default();
 
         let past_hashes: Vec<_> = game.game_history.iter().map(|game| game.zobrist_hash).collect();
         let dead_nodes = Vec::new();

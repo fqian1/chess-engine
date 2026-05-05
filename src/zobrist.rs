@@ -30,6 +30,12 @@ impl XorShift64 {
     }
 }
 
+impl Default for XorShift64 {
+    fn default() -> Self {
+        Self::new(1234)
+    }
+}
+
 pub struct ZobristKeys {
     // [color][piece][square]
     pub pieces: [[[u64; 64]; 6]; 2],

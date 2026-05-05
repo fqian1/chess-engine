@@ -1,4 +1,4 @@
-use burn::data::dataloader::batcher::{Batcher};
+use burn::data::dataloader::batcher::Batcher;
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
 use burn::{
     Tensor,
@@ -35,6 +35,7 @@ pub struct TrainingConfig {
     pub model: ChessTransformerConfig,
     pub masked: bool,
     pub legal: bool,
+    pub annealing: bool,
     pub scheduler: NoamLrSchedulerConfig,
     pub optimizer: AdamWConfig,
     #[config(default = 64)]
@@ -150,7 +151,8 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob").unwrap();
     }
 
-    model = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("./mate_evals.tsv")).unwrap();
+    model =
+        pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("./mate_evals.tsv")).unwrap();
 
     let mut games_started: u32 = games.len() as u32;
     let mut iterations = 0;
@@ -233,8 +235,17 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let mut loss_total = Tensor::<B, 1>::zeros([1], device);
         for epoch in 0..training_config.gradient_steps {
             info!("Training model: epoch {}", epoch);
-            let (new_model, val) =
-                train(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, &replay_buffer, device, avg_illegal_prob as f32, &mut rng);
+            let (new_model, val) = train(
+                model.clone(),
+                &mut optimizer,
+                &mut lr_scheduler,
+                training_config,
+                &replay_buffer,
+                device,
+                avg_illegal_prob as f32,
+                training_config.annealing,
+                &mut rng,
+            );
             model = new_model;
             loss_total = loss_total + val;
         }
@@ -290,12 +301,13 @@ pub fn train<B: AutodiffBackend>(
     games: &ReplayBuffer,
     device: &B::Device,
     avg_illegal_prob: f32,
+    annealing: bool,
     rng: &mut SmallRng,
 ) -> (ChessTransformer<B>, Tensor<B, 1>) {
     let datas: ChessBatch<B> = games.sample_batch(config.batch_size, rng, device);
     let lr = scheduler.step();
 
-    let output = model.forward_classification(datas, avg_illegal_prob);
+    let output = model.forward_classification(datas, if annealing { avg_illegal_prob } else { 0.0 });
     let loss = output.loss;
     let grads = loss.backward();
     let grads = GradientsParams::from_grads(grads, &model);
@@ -327,7 +339,7 @@ pub fn pretrain<B: AutodiffBackend>(
         let game = match ChessGame::from_fen(fen) {
             Ok(g) => g,
             Err(e) => {
-                print!("{}",e);
+                print!("{}", e);
                 continue;
             }
         };
@@ -353,7 +365,7 @@ pub fn pretrain<B: AutodiffBackend>(
         let inputs = NetworkInputs::from_position(&game.position, None);
         let targets = NetworkLabels { policy: [0.0; 64], value: eval };
 
-        let mask = [false; 64]; 
+        let mask = [false; 64];
 
         samples.push(TrainingSample { inputs, targets, mask });
     }
