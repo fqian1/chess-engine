@@ -15,7 +15,7 @@ use burn::{
 use chess::Board;
 use log::{debug, info, trace};
 use rand::TryRng;
-use rand::seq::IndexedRandom;
+use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
@@ -211,6 +211,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     loop {
         info!("Starting Self play - Train loop: cycle {}", iterations);
 
+        let mut avg_acpl = 0.0;
         let mut illegal_move_weight: f64 = 0.0;
 
         for _ in 0..training_config.steps_per_iter {
@@ -305,15 +306,21 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let loss_val = loss_total / training_config.gradient_steps as f32;
         let loss_val = loss_val.into_scalar().to_f32();
 
-        let mut avg_acpl = 0.0;
         unsafe {
             if training_config.legal {
-                for game in games.iter() {
-                    let mut current_running_board = Board::default();
-                    let mut total_acpl = 0;
-                    let mut move_count = 0;
+                let sample_count = (games.len() / 10).max(1);
+                let samples: Vec<&ChessGame> = games.iter().sample(&mut rng, sample_count);
+                let mut total_batch_acpl = 0.0;
+                let mut valid_games = 0;
+
+                for game in samples {
+                    let mut board = Board::default();
+                    let mut game_acpl_sum = 0;
+                    let mut moves_in_game = 0;
 
                     for mov in game.move_list.iter() {
+                        let eval_before = stockfish.get_eval(&board);
+
                         let from = chess::Square::new(mov.from.0);
                         let to = chess::Square::new(mov.to.0);
 
@@ -327,19 +334,22 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                         });
 
                         let chess_move = chess::ChessMove::new(from, to, prom);
-                        let eval_before = stockfish.get_eval(&current_running_board);
-                        current_running_board = current_running_board.make_move_new(chess_move);
-                        let eval_after = -stockfish.get_eval(&current_running_board);
+                        board = board.make_move_new(chess_move);
 
-                        let loss = (eval_before - eval_after).max(0);
-                        total_acpl += loss;
-                        move_count += 1;
+                        let eval_after = -stockfish.get_eval(&board);
+
+                        let loss = (eval_before - eval_after).clamp(0, 1000);
+                        game_acpl_sum += loss;
+                        moves_in_game += 1;
                     }
 
-                    if move_count > 0 {
-                        avg_acpl += total_acpl as f32 / move_count as f32;
+                    if moves_in_game > 0 {
+                        total_batch_acpl += game_acpl_sum as f32 / moves_in_game as f32;
+                        valid_games += 1;
                     }
                 }
+
+                avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
             }
         }
 
