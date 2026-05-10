@@ -149,6 +149,9 @@ pub fn inputs_to_tensor<B: Backend>(buffer: &Vec<NetworkInputs>, device: &B::Dev
 
 pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, training_config: &TrainingConfig, device: &B::Device) {
     let mut model: ChessTransformer<B> = training_config.model.init(device);
+    let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
+    let mut lr_scheduler = training_config.scheduler.init().unwrap();
+    let mut rng = SmallRng::seed_from_u64(training_config.seed);
 
     let artifact_dir = if path_arg.is_file() {
         path_arg.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf()
@@ -173,16 +176,22 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         };
 
         let record = recorder.load(load_path.into(), device).expect("Failed to load existing model record");
-
         model = model.load_record(record);
+        if let Some(path) = load_path.parent() {
+            let mut thing = PathBuf::from(path);
+            thing.push("optim.mpk");
+            println!("Loading optimizer from {:?}", thing);
+            let record = recorder.load(thing, device).expect("Failed to load existing optimizer record");
+            optimizer = optimizer.load_record(record);
+        };
+    } else {
+        model = pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("./mate_evals.tsv"))
+            .unwrap();
     }
     B::seed(device, training_config.seed);
 
     let mut replay_buffer = ReplayBuffer::new(524288);
-    let mut lr_scheduler = training_config.scheduler.init().unwrap();
-    let mut optimizer = training_config.optimizer.init::<B, ChessTransformer<B>>();
     let mut games = vec![ChessGame::default(); training_config.batch_size];
-    let mut rng = SmallRng::seed_from_u64(training_config.seed);
     let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(game, 16384, *mcts_config, rng.try_next_u64().unwrap())).collect();
     let mut stockfish = Stockfish::new();
     let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
@@ -192,9 +201,6 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     if std::fs::metadata(&csv_path).unwrap().len() == 0 {
         writeln!(csv_file, "iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob,avg_acpl").unwrap();
     }
-
-    model =
-        pretrain(model.clone(), &mut optimizer, &mut lr_scheduler, training_config, device, &mut rng, &PathBuf::from("./mate_evals.tsv")).unwrap();
 
     let mut games_started: u32 = games.len() as u32;
     let mut iterations = 0;
@@ -299,47 +305,40 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let loss_val = loss_total / training_config.gradient_steps as f32;
         let loss_val = loss_val.into_scalar().to_f32();
 
-        // Replace that unsafe block/ACPL calculation with this:
         let mut avg_acpl = 0.0;
         unsafe {
-            for game in games.iter() {
-                // Start with a fresh board for each game
-                let mut current_running_board = Board::default();
-                let mut total_acpl = 0;
-                let mut move_count = 0;
+            if training_config.legal {
+                for game in games.iter() {
+                    let mut current_running_board = Board::default();
+                    let mut total_acpl = 0;
+                    let mut move_count = 0;
 
-                for mov in game.move_list.iter() {
-                    let from = chess::Square::new(mov.from.0);
-                    let to = chess::Square::new(mov.to.0);
+                    for mov in game.move_list.iter() {
+                        let from = chess::Square::new(mov.from.0);
+                        let to = chess::Square::new(mov.to.0);
 
-                    let prom = mov.promotion.map(|p| match p {
-                        PieceType::Pawn => chess::Piece::Pawn,
-                        PieceType::Knight => chess::Piece::Knight,
-                        PieceType::Bishop => chess::Piece::Bishop,
-                        PieceType::Rook => chess::Piece::Rook,
-                        PieceType::Queen => chess::Piece::Queen,
-                        PieceType::King => chess::Piece::King,
-                    });
+                        let prom = mov.promotion.map(|p| match p {
+                            PieceType::Pawn => chess::Piece::Pawn,
+                            PieceType::Knight => chess::Piece::Knight,
+                            PieceType::Bishop => chess::Piece::Bishop,
+                            PieceType::Rook => chess::Piece::Rook,
+                            PieceType::Queen => chess::Piece::Queen,
+                            PieceType::King => chess::Piece::King,
+                        });
 
-                    let chess_move = chess::ChessMove::new(from, to, prom);
-                    println!("{}", chess_move);
-                    println!("{}", current_running_board);
+                        let chess_move = chess::ChessMove::new(from, to, prom);
+                        let eval_before = stockfish.get_eval(&current_running_board);
+                        current_running_board = current_running_board.make_move_new(chess_move);
+                        let eval_after = -stockfish.get_eval(&current_running_board);
 
-                    let eval_before = stockfish.get_eval(&current_running_board);
+                        let loss = (eval_before - eval_after).max(0);
+                        total_acpl += loss;
+                        move_count += 1;
+                    }
 
-                    current_running_board = current_running_board.make_move_new(chess_move);
-
-                    // 3. Get eval AFTER (invert for side-to-move)
-                    let eval_after = -stockfish.get_eval(&current_running_board);
-
-                    let loss = (eval_before - eval_after).max(0); // ACPL shouldn't be negative
-                    total_acpl += loss;
-                    println!("{}", total_acpl);
-                    move_count += 1;
-                }
-
-                if move_count > 0 {
-                    avg_acpl += total_acpl as f32 / move_count as f32;
+                    if move_count > 0 {
+                        avg_acpl += total_acpl as f32 / move_count as f32;
+                    }
                 }
             }
         }
