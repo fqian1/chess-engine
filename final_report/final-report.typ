@@ -53,29 +53,32 @@
     #v(2fr)
     #text(
       size: 20pt,
-    )[The Impact of Action Masking and Environmental Constraints on Rule Internalization in Transformer-Based Chess Agents]
+    )[The Impact of Action Masking and \
+    Environmental Constraints on \ Rule
+    Internalization in Transformer-Based \
+    Chess Agents]
 
-    #v(2cm)
+    #v(1cm)
     by
-    #v(2cm)
+    #v(1cm)
 
     #text(size: 16pt)[Francois Qian] \
     URN: 6702759/7
 
-    #v(3cm)
+    #v(2cm)
 
     A dissertation submitted in partial fulfilment of the \
     requirements for the award of
 
-    #v(1.5cm)
+    #v(1cm)
 
     #text(size: 16pt)[BACHELOR OF SCIENCE IN COMPUTER SCIENCE]
 
-    #v(1.5cm)
+    #v(0.5cm)
 
     May 2026
 
-    #v(2cm)
+    #v(2.5cm)
 
     Department of Computer Science \
     University of Surrey \
@@ -166,7 +169,7 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
   [$V(s)$], [The value function representing the scalar evaluation of a board position's win probability.],
   [$lambda$], [The curriculum coefficient (illegal mass ratio) used to weigh policy vs. value loss.],
   [$N(s, a)$], [The visit count of an edge in the search tree, indicating how many times an action has been explored.],
-  [$c_("puct")$], [A hyperparameter controlling the trade-off between exploration and exploitation in the search tree.],
+  [$c_("puct")$], [A hyper-parameter controlling the trade-off between exploration and exploitation in the search tree.],
   [$A_L(s)$], [The set of strictly legal moves available in state $s$ according to FIDE rules.],
   [$A_P(s)$], [The set of pseudo-legal moves (geometrically valid but potentially leaving the king in check).],
   [$N_"select"$],
@@ -176,7 +179,7 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
   [A node in the bipartite MCTS where an origin square has been fixed and the agent selects a 'to' square.],
 
   [$K_"cap"$], [The terminal event of king capture used as the reward signal in the pseudo-legal rule set.],
-  [$d_("model")$], [The hidden dimensionality of the Transformer encoder's internal representations.],
+  [$d_("model")$], [The hidden dimensionality of the transformer encoder's internal representations.],
 )
 
 // ========================================== // PAGE 10: ABBREVIATIONS // ==========================================
@@ -208,31 +211,39 @@ I would like to thank my supervisor, Nishanth Sastry, for overseeing the project
 // ==========================================
 = Introduction
 == Project Background
-Chess is a deterministic, perfect-information zero-sum game played on an $8 times 8$ grid. Each player commands 16 pieces of 6 distinct classes, each governed by strict kinematic rules. The objective is to trap the opponent's king (checkmate). Historically dubbed the "Drosophila of AI" #cite(label("10.1007/978-1-4613-9080-0_14")), chess provides an optimal substrate for studying machine intelligence: it presents highly ambiguous intermediate states bound by objective ground truths and a mathematically perfect, yet computationally intractable, solution space ($approx 10^40$ states).
+Chess is a deterministic, perfect-information zero-sum game played on an $8 times 8$ grid. Two players command 16 pieces of 6 distinct classes, each governed by strict kinematic rules with the objective of trapping the opponent's king (checkmate). Historically dubbed the "Drosophila of AI" (#cite(label("10.1007/978-1-4613-9080-0_14"))), chess provides an optimal substrate for studying machine intelligence: it presents highly ambiguous intermediate states bound by objective ground truths and a mathematically perfect, yet computationally intractable, solution space (approximately $10^40$ states).
 
-Modern machine learning frequently decouples models from environment transition dynamics via *Logit Masking*, a heuristic that artificially zeroes out the probability of illegal actions prior to softmax activation. While computationally efficient, this deprives the network of negative feedback for invalid predictions, bypassing the model's need to internally represent the mechanics of play.
+Neural networks learn chess through *reinforcement learning (RL)*, a machine learning paradigm where an autonomous agent learns to make optimal actions in an environment to maximize a reward signal. This typically involves decoupling the model from environment transition dynamics via *logit masking*, a heuristic that artificially zeroes out the probability of illegal actions prior to softmax activation. This is a known optimization that accelerates convergence (#cite(label("DBLP:journals/corr/abs-2006-14171"))). Consequently, State Of The Art (SOTA) engines (e.g., AlphaZero - @silver2017masteringchessshogiselfplay) utilize hardcoded legal move generators to mask out invalid actions. While computationally efficient, this deprives the network of negative feedback for invalid predictions, bypassing the model's need to internally represent the mechanics of the game and leaves the representational dynamics of rule acquisition from scratch in complex Markov Decision Processes (MDP) unexplored. 
 
-As AI systems scale toward generalized world models, the ability of an agent to internalize the causal rules of its environment (as opposed to hardcoded environmental constraints) becomes critical. Understanding how neural networks represent physical constraints versus strategic heuristics is fundamental to interpretability.
+Literature has largely overlooked the impact of removing these guardrails because standard RL in chess prioritize asymptotic Elo gain per Floating Point Operation. As AI systems scale toward generalized world models, the ability of an agent to internalize the causal rules of its environment (as opposed to hardcoded environmental constraints) serves as a critical proxy for architectural robustness, reliability, and interpretability. 
 
-Literature has largely omitted the impact of removing these guardrails because standard reinforcement learning (RL) prioritizes asymptotic Elo gain per Floating Point Operation. Masking is a known optimization that accelerates convergence (#cite(label("DBLP:journals/corr/abs-2006-14171"))). Consequently, State Of The Art (SOTA) engines (e.g., AlphaZero - @silver2017masteringchessshogiselfplay) utilize hardcoded legal move generators, leaving the representational dynamics of rule acquisition from scratch in complex Markov Decision Processes (MDP) unexplored. This project aims to investigate the learning dynamics and internal representations that emerge when these guardrails are removed.
+== Aims and Objectives
+This project investigates the emergent learning dynamics and internal representations of a transformer-based self-playing chess agent when logit masking and environmental constraints are removed.
 
+Specific objectives include:
+- *Implement high-throughput chess library:* Develop a dual ruleset engine optimized for RL self-play.
+- *Architect action-selection models:* Design a two-pass autoregressive transformer and bipartite MCTS to model piece to square selection.
+- *Execute comparative training:* Train five configurations, varying move legality (Legal/Pseudo-Legal), masking, and loss-annealing, using identical hyperparameters.
+- *Quantify performance metrics:* Measure convergence rates, illegal-move frequencies, and the evolution of rule-abiding behavior in unconstrained models.
+- *Analyze spatial reasoning:* Correlate the emergence of legal play with attention distribution patterns in the two-pass encoder.
 
 == Project Description
-Two orthogonal axes of environmental constraint are examined. Crucially, these axes isolate distinct learning targets: *Action Masking* dictates the policy head's acquisition of piece kinematics, while *Environmental Constraints* dictate the value head's acquisition of survival heuristics.
-
 A custom two-pass autoregressive transformer encoder and a bipartite Monte Carlo Search Tree (MCTS) are introduced to facilitate explicit measurement of model interpretability. This architecture decouples piece selection from destination selection to provide a granular window into the model's spatial reasoning.
+Two orthogonal axes of environmental constraint are examined. Crucially, these axes isolate distinct learning targets: *Logit Masking* dictates the policy head's acquisition of piece kinematics, while *Environmental Constraints* dictate the value head's acquisition of survival heuristics.
 
 The experimental configurations are defined across two axes:
-+ *Axis 1: Rule Set Convergence (Action Space Constraints)*
++ *Axis 1: Rule Set Convergence via Environmental Constraints*
   - *Control:* Training on a strict legal ruleset.
   - *Test:* Training on a pseudo-legal ruleset where the terminal state is the simpler, denser king capture $(K_"cap")$ over the highly sparse, complex ($A_l = nothing$). This variant of Chess fundamentally alters the Markov Decision Process (MDP) reward function $R(s, a)$ yielding a potentially smoother reward landscape, forcing the value head to learn survival heuristics (e.g., pins) rather than relying on hardcoded environment evaluations.
-  - *Hypothesis:* The network first bootstraps learning the rules and goals of the environment. Ideal play in the pseudo-legal space $A_P$ may converge to standard Chess where concepts such as pins and checkmates emerge as survival heuristics to prevent or secure king capture. Conversely, the removal of environmental guardrails may degrade MCTS value estimation, preventing policy bootstrapping.
+  - *Hypothesis:* A neural network trained in a pseudo-legal action space will autonomously acquire core chess rules and strategic behaviours through self-play.
 
-+ *Axis 2: Logit Masking*
++ *Axis 2: Piece Kinematics Internalization via Logit Masking*
   - *Control:* Masked logits (illegal moves are mathematically eliminated prior to selection).
   - *Test:* Unmasked logits (illegal moves are permitted by the network but penalized by the environment/loss function).
   - *Ablation:* Unmasked logits with a fixed policy/value loss ratio, isolating the impact of the proposed self-annealing curriculum loss (@self-annealing).
-  - *Hypothesis:* Unmasked training will incur an initial sample-efficiency penalty by introducing the dual-optimisation problem of learning game mechanics alongside strategy, but may lead to more robust internal representations reflecting potentially stronger play long term.
+  - *Hypothesis:* Unmasked training will accelerate convergence by first learning piece kinematics before strategy, forming an automated curriculum.
+  
+In the unmasked, pseudo-legal regime, the network faces a dual-optimization problem: it must learn the physical constraints of the board (the rules) and the strategic evaluation of states (the game). It is predicted that this configuration will exhibit non-monotonic learning dynamics: an initial regime of high illegal-move proposals, followed by a sharp convergence toward $A_P(s)$ as kinematics are internalized, acting as an emergent curriculum before strategic play develops in $A_L(s)$.
 
 
 == Scope and Limitations
@@ -240,19 +251,9 @@ Several limitations bound the scope of the work:
 + The comparison of interest is across five training configurations over asymptotic performance. As such, models are not benchmarked against external engines; absolute Elo against SOTA requires significantly more compute than the project budget allows.
 + The value head is bootstrapped against MCTS root values over terminal outcomes to accelerate convergence, constrained by GPU throughput.
 
-== Aims and Objectives
-The primary aim is to train multiple transformer-based agents via self-play reinforcement learning across the varying rule sets and action spaces and to quantitatively evaluate their performance, learning trajectories, and emergent behaviours.
-
-Specific objective include:
-- *Implement high-throughput chess library:* Develop a dual ruleset engine optimized for RL self-play.
-- *Architect action-selection models:* Design a two-pass autoregressive transformer and bipartite MCTS to model piece $->$ square selection.
-- *Execute comparative training:* Train five configurations, varying move legality (Legal/Pseudo-Legal), masking, and loss-annealing, using identical hyperparameters.
-- *Quantify performance metrics:* Measure convergence rates, illegal-move frequencies, and the evolution of rule-abiding behavior in unconstrained models.
-- *Analyze spatial reasoning:* Correlate the emergence of legal play with attention distribution patterns in the two-pass encoder.
-
 == Thesis Structure
-The remainder of this dissertation is structured as follows:
-- *Chapter 2* surveys the literature surrounding reinforcement learning, Transformer architectures, action masking, and curriculum learning, identifying the gap this work addresses.
+This dissertation is structured as follows:
+- *Chapter 2* surveys the literature surrounding reinforcement learning, transformer architectures, action masking, and curriculum learning, identifying the gap this work addresses.
 - *Chapter 3* details the system design, including the bipartite MCTS, the two-pass encoder, and the self-annealing loss function.
 - *Chapter 4* outlines the implementation of the Rust engine and training pipeline, with particular attention to the engineering decisions that make high-throughput self-play tractable.
 - *Chapter 5* presents the results and evaluation across the four configurations.
@@ -267,7 +268,7 @@ The remainder of this dissertation is structured as follows:
 // Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm (Alphazero) [silver2017masteringchessshogiselfplay]
 // Mastering Atari, Go, chess and shogi by planning with a learned model (Muzero) [Schrittwieser_2020]
 // A Closer Look at Invalid Action Masking in Policy Gradient Algorithms (huang) [DBLP:journals/corr/abs-2006-14171]
-// Mastering Chess with a Transformer Model (2024) [monroe2026chessformer]
+// Mastering Chess with a transformer Model (2024) [monroe2026chessformer]
 // Evidence of Learned Look-Ahead in a Chess-Playing Neural Network (2024) [jenner2024evidencelearnedlookaheadchessplaying]
 // Acquisition of Chess Knowledge in AlphaZero (2021) [DBLP:journals/corr/abs-2111-09259]
 // Giraffe: Using Deep Reinforcement Learning to Play Chess (2015) [DBLP:journals/corr/Lai15a]
@@ -276,58 +277,72 @@ The remainder of this dissertation is structured as follows:
 // Factored Action Space Representations for Deep Reinforcement learning [DBLP:journals/corr/SharmaSRR17]
 
 = Literature Review
-== Chess as an MDP
-Chess can be formally modelled as a MDP defined by the tuple $(S, A, T, R)$, where $S$ is the state space ($|S| approx 10^40$), $A$ is the action space, $T: S times A -> S$ is the deterministic transition function, and $R: S times A -> {-1, 0, 1}$ is the reward function (@Shannon01031950, @andrew2018reinforcement). Standard implementations enforce a legal action space $A_L(s) subset A$ in which moves leaving the king in check are excluded by the environment @fide2023laws. This project introduces a relaxed pseudo-legal action space $A_P(s)$ such that $A_L(s) subset A_P(s) subset A$, permitting all geometrically valid piece movements and shifting the terminal condition from the abstract _checkmate_ to the explicit _king capture_ $K_("cap")$.
+== Chess as a Markov Decision Process (MDP)
+In reinforcement learning (RL), chess is modelled as a MDP defined by the tuple $(S, A, T, R)$, where $S$ is the state space ($|S| approx 10^40$), $A$ is the action space, $T: S times A -> S$ is the deterministic transition function, and $R: S times A -> {-1, 0, 1}$ is the reward function (@andrew2018reinforcement). 
 
-== Chess Played by Machines
-=== AlphaZero and MuZero
-The paradigm of self-play RL in chess was defined by AlphaZero (@silver2017masteringchessshogiselfplay), which combined MCTS with deep convolutional neural networks (CNNs) for policy and value evaluation. However, AlphaZero relies entirely on a hardcoded environment to generate $A_L(s)$, bypassing the need for the network to internalize the rules of the game.
+@Shannon01031950 examined the complexity of chess as a MDP by introducing the distinction between Type A (brute force + fixed depth) and Type B (selective search + heuristic pruning) search strategies, which then provided the groundwork for modern learned selective search (MCTS + neural priors) as a hybrid strategy.
 
-MuZero (@Schrittwieser_2020) removed the need for a known transition dynamics model by learning a latent environment simulator. While MuZero demonstrates the ability to adhere to environment constraints implicitly within its hidden state transitions, its policy head still simulates within the legal action space during MCTS rollouts. The literature lacks insight into how the removal of environmental guardrails or action masking impacts the sample efficiency and representational robustness of the underlying network.
+Standard RL chess engines enforce a legal action space $A_L(s) subset A$ in which moves leaving the king in check are excluded by the environment (@fide2023laws). This project introduces a relaxed pseudo-legal action space $A_P(s)$ such that $A_L(s) subset A_P(s) subset A$, permitting all geometrically valid piece movements and shifting the terminal condition from the abstract _checkmate_ to the explicit _king capture_ $K_("cap")$, fundamentally altering the MDP while still retaining the same optimal policy.
 
-In domains with highly structured action spaces, such as StarCraft II, AlphaStar (@Vinyals2019) demonstrated the efficacy of autoregressive policy heads to factor complex joint distributions. Adapting this to chess, factoring the joint probability as $ P(a|s) = P("from"|s) dot P("to"|s, "from") $ collapses the output dimensionality from $d_"model" times 4672$ to $d_"model" times 64$ and gives rise to two distinct, observable failure modes: attention failure (identifying movable pieces) and kinematic failure (how pieces move).
+== Chess Played by Machines <chess_by_machines>
+=== Giraffe
+#cite(label("DBLP:journals/corr/Lai15a")) introduced Giraffe, a chess engine that learned to autonomously learn an evaluation function via RL self-play. The system relied on the TD-leaf($gamma$) algorithm to train the neural network, a form of value bootstrapping, to reach IM level performance. This will then go on to influence the value evaluation algorithm for the subsequent architectures below.
 
-While both AlphaZero and MuZero proved the viability of MCTS + RL, their success is reliant on the embedded spatial CNNs biases that Transformers remove, making Transformers a superior substrate for studying pure rule internalization.
+=== AlphaZero
+The paradigm of self-play RL in chess was defined by AlphaZero (@silver2017masteringchessshogiselfplay), which combined Monte Carlo Tree Search (MCTS) with deep convolutional neural networks (CNNs) for policy and value evaluation. AlphaZero relies entirely on a hardcoded environment to generate $A_L(s)$, bypassing the need for the network to internalize the rules of the game.
+
+=== MuZero
+MuZero (@Schrittwieser_2020) removed the need for a known transition dynamics model by learning a latent environment simulator, outperforming models trained in hard-coded environments. While MuZero demonstrates the ability to adhere to $A_L(s)$ implicitly within its hidden state transitions, its policy head still undergoes logit masking during MCTS rollouts and the network never explores $A_P(s)$. The literature lacks insight into how the removal of environmental guardrails or action masking impacts the sample efficiency and representational robustness and performance of the underlying network.
+
+While both AlphaZero and MuZero proved the viability of MCTS + RL, their success is reliant on the embedded spatial CNNs biases that transformers remove, making transformers a superior substrate for studying pure rule internalization.
 
 === Transformers in Chess
-Recent advancements demonstrate the efficacy of Transformer architectures in chess, shifting away from the spatial inductive biases of CNNs. #cite(label("monroe2024masteringchesstransformermodel")) achieved Grandmaster-level performance with a Transformer relying purely on attention to evaluate board states, without explicit search. #cite(label("jenner2024evidencelearnedlookaheadchessplaying")) provided complementary evidence of learned look-ahead in chess-playing networks, showing that attention heads encode candidate future board states. @McGrath_2022 further demonstrated that AlphaZero-style networks acquire human-interpretable concepts (material balance, mobility, king safety) over the course of training.
+Recent advancements demonstrate the efficacy of transformer architectures in chess, shifting away from the spatial inductive biases of CNNs. #cite(label("monroe2024masteringchesstransformermodel")) achieved Grandmaster-level performance with a transformer relying purely on attention to evaluate board states, without explicit search. #cite(label("jenner2024evidencelearnedlookaheadchessplaying")) provided complementary evidence of learned look-ahead in chess-playing networks, showing that attention heads encode candidate future board states. @McGrath_2022 further demonstrated that AlphaZero-style networks acquire human-interpretable concepts (material balance, mobility, king safety) over the course of training. Specifically, concepts like piece value appear in early clusters within the network, with checkmate detection appearing later in deeper layers.
 
-These results frame the central architectural choice of the present work: decoupling $P("from"|s)$ from $P("to"|s, "from")$ provides an observable window into distinct failure modes: attention failure (identifying movable pieces) and kinematic failure (how pieces move).
+=== Efficiently Updateable Neural Networks (NNUE)
+Stockfish champions the SOTA crown, built using the NNUE (@Nasu2018) architecture, a highly efficient SIMD-optimized architecture designed to run on CPU for maximum throughput. The network architecture itself is simple and dumb by design, making up for in raw speed of state evaluations - a stark contrast to the slow, yet feature rich representations the attention mechanism provides within transformers. As a result, the transformer architecture is selected over NNUE for this project as they lack the generalization capabilities transformers exhibit, instead designed to exploit engineered features and generate convincing moves (more in @eliza).
+
+== AlphaStar
+In domains with highly structured action spaces, such as StarCraft II, AlphaStar (@Vinyals2019) demonstrated the efficacy of autoregressive policy heads to factor complex joint distributions. Adapting this to chess, factoring the joint probability as $ P(a|s) = P("from"|s) dot P("to"|s, "from") $ collapses the output dimensionality from $d_"model" times 4672$ to $d_"model" times 64$ and gives rise to two distinct, observable failure modes: attention failure (identifying movable pieces) and kinematic failure (how pieces move).
+
+== The ELIZA effect <eliza>
+The historical development of AI is haunted by the ELIZA effect, a phenomenon where users attribute humanlike cognitive depth or intentionality to systems performing simple 
+symbol manipulation (@e5327ff8-7444-3fe8-a163-48f11e4bdba2). In chess, this effect manifests when observers interpret the outputs of high-dimensional, flat-policy engines as "strategic intuition". AlphaZero masks thousands of illegal actions, creating a discursive illusion of understanding; the model appears to "know" how to play, yet may simply be filtering a massive probability distribution through environmental guardrails. 
+
+These results frame the central architectural decision behind the factored auto-regressive encoder: decoupling $P("from"|s)$ from $P("to"|s, "from")$ provides an attempt to move from mimicry to internalization, while simultaneously providing an observable window into distinct failure modes: attention failure (identifying movable pieces) and kinematic failure (how pieces move).
 
 == Invalid Action Masking
-In policy gradient algorithms, it is standard practice to prevent the selection of illegal actions via Invalid Action Masking (Logit Masking). Masking applies a transformation to the policy logits $z$ prior to the softmax activation:
+In policy gradient algorithms, it is standard practice to prevent the selection of illegal actions via invalid action masking (logit masking) (@vinyals2017pointernetworks). Masking applies a transformation to the policy logits $z$ prior to the softmax activation:
 
 $ P(a_i|s) = exp(z_i + M_i) / (sum_j exp(z_j + M_j)) $
 
 where $M_i = -infinity$ if $a_i in.not A_L(s)$, and $0$ otherwise.
 
-#cite(label("DBLP:journals/corr/abs-2006-14171")) demonstrated that collapsing the exploration space via action masking significantly improves sample efficiency. However, logit masking prevents the network receiving feedback from masked indices due to gradients being nullified in the compute graph, preventing backpropagation of loss. For an MCTS-based agent, masking is essentially required as simulations into invalid state transitions corrupt value estimates and propagate poison up the tree. However, Huang and Ontañón's analysis is restricted to small, flat action spaces where the legal subset is a fixed function of a few features (MicroRTS). Chess presents a qualitatively harder case: legality depends on the global board configuration, and the function $A_L(s)$ is itself nontrivial to compute. This work investigates whether the conclusions of #cite(label("DBLP:journals/corr/abs-2006-14171")) generalize to environments where the rules constitute an algorithmic learning target.
-
-Without masking, for any state $s$, an optimal policy $pi^*$ trained in $A_P$ must implicitly learn to prune the action space such that:
+Masking can also be introduced through environmental constraints. The typical legal action space $A_L(s)$ is one such mask - a subset of $A_P(s)$, where the concept of "check" is substantiated, encoding king safety. /*The relaxed pseudo-legal state $A_P(s)$ is re-introduced, allowing king capture and removing the concept of "check".*/ For any state $s$, an optimal policy $pi^*$ trained in $A_P$ must implicitly learn to prune the action space such that:
 $ pi^*(a|s) -> 0 quad "for all" a in (A_P(s) without A_L(s)) $
-Under this paradigm, concepts such as pins and checkmating nets cease to be hardcoded environmental properties and become _emergent survival heuristics_ within the value landscape.
+Under this paradigm, concepts such as pins and checkmating nets cease to be hard-coded environmental properties (valid in $A_P(s)$) and instead become _emergent survival heuristics_ within the value landscape.
 
+#cite(label("DBLP:journals/corr/abs-2006-14171")) demonstrated that collapsing the exploration space via action masking significantly improves sample efficiency. For an MCTS-based agent, masking is required as simulations into invalid state transitions will propagate corrupted value estimates up the search tree. However, Huang and Ontañón's analysis is restricted to small, flat action spaces where the legal subset is a fixed function of a few features (MicroRTS).
+
+Chess presents a qualitatively harder case: legality depends on the global board configuration, and the function $A_L(s)$ is itself nontrivial to compute. 
+Logit masking prevents the network receiving feedback from masked indices as gradients are nullified in the compute graph, preventing backpropagation of loss. This work investigates whether the conclusions of #cite(label("DBLP:journals/corr/abs-2006-14171")) generalize to environments where the rules constitute an algorithmic learning target.
 
 == Learning Dynamics
 The unmasked, pseudo-legal regime forces the network to learn the rules of chess from scratch as a precondition for strategic evaluation, raising the prospect of non-monotonic learning dynamics. #cite(label("power2022grokking")) identified the phenomenon of _grokking_, in which neural networks trained on small algorithmic datasets exhibit sharply delayed generalization long after overfitting the training set, mediated by weight-decay pressure. Chess is an algorithmic dataset embedded in a strategic MDP, showcasing the potential of analogous phase transitions.
 
-#cite(label("10.1145/1553374.1553380")) formalized _curriculum learning_, showing that ordering training data from simple to complex acts as a regularizer, guiding optimization toward superior local minima inaccessible through random shuffling. It is hypothesized a pseudo-legal environment serves implicitly as curriculum where an agent first receives rewards through piece kinematics and king capture before survival heuristics under $A_L$. // td?
+#cite(label("10.1145/1553374.1553380")) formalized _curriculum learning_, showing that ordering training data from simple to complex acts as a regularizer, guiding optimization toward superior local minima inaccessible through random shuffling. A pseudo-legal environment serves implicitly as curriculum where an agent first receives rewards through piece kinematics and king capture before survival heuristics under $A_L$.
 
 #cite(label("DBLP:journals/corr/SharmaSRR17")) introduced a framework for factoring discrete action spaces into compositional, basis-like components, enabling cross-action generalization among actions that share common factors. This principle is instantiated in the factored engine architecture, where each selection and destination shares a common output head.
 
-== Summary and Research Gap
-While the efficacy of action masking is well-documented in general RL (#cite(label("DBLP:journals/corr/abs-2006-14171"))), and Transformers have proven capable of modelling chess at a high level (@jenner2024evidencelearnedlookaheadchessplaying), the intersection of these domains is unexplored. No existing work isolates the impact of environmental guardrails on the representational quality of Transformer-based MCTS agents, nor on the dynamics of rule internalization when those guardrails are removed.
-
-In the unmasked, pseudo-legal regime, the network faces a dual-optimization problem: it must learn the physical constraints of the board (the rules) and the strategic evaluation of states (the game). It is hypothesized that this configuration will exhibit non-monotonic learning dynamics: an initial regime of high illegal-move proposals, followed by a sharp convergence toward $A_P(s)$ as kinematics are internalized, acting as an emergent curriculum before strategic play develops in $A_L(s)$.
-
-This project addresses this gap by training four distinct configurations across two orthogonal axes: Action Space Constraints (Legal vs. Pseudo-Legal) and Logit Masking (Masked vs. Unmasked). By utilizing a factored two-pass autoregressive encoder, this research provides a novel, quantitative analysis of how rule internalization and action space pruning manifest within the attention layers of a chess-playing agent.
+== Research Gap
+While the efficacy of action masking is well-documented in general RL (#cite(label("DBLP:journals/corr/abs-2006-14171"))), and transformers have proven capable of modelling chess at a high level (@jenner2024evidencelearnedlookaheadchessplaying), the intersection of these domains is unexplored. No published literature isolates the impact of environmental guardrails on the representational quality of transformer-based MCTS agents, the dynamics of rule internalization, or overall agent performance when those guardrails are removed. This project addresses this gap by training four distinct configurations across two orthogonal axes: Environment Constraints (Legal vs. Pseudo-Legal) and Logit Masking (Masked vs. Unmasked) to investigate how the environment manifests within a transformer based chess engine and the impact on performance.
 
 // ==========================================
 // CHAPTER 3: DESIGN
 // ==========================================
-= System Design and Methodology
+= System Design
 == System Architecture Overview <overview>
-The system is designed as a closed-loop reinforcement learning pipeline, decoupling the environment transition dynamics from the neural network's internal representations. The architecture consists of three primary components: a custom deterministic environment simulator supporting dual rulesets, a two-pass autoregressive Transformer encoder, and a bipartite MCTS algorithm. The system operates via self-play, generating trajectories to optimize the network.
+The system is designed as a closed-loop reinforcement learning pipeline, decoupling the environment transition dynamics from the neural network's internal representations. The architecture consists of three primary components: a custom deterministic environment simulator supporting dual rulesets, a two-pass autoregressive transformer encoder, and a bipartite MCTS algorithm. The system operates via self-play, generating trajectories to optimize the network.
 
 Each component is designed such that the experimental axes can be toggled on or off independently without altering any other part of the system. This is essential to the validity of the comparison: the four configurations differ only in the two boolean flags governing their respective axes, with all hyperparameters held constant.
 
@@ -358,7 +373,7 @@ To explicitly measure spatial reasoning, the system factors the joint probabilit
 The factored $64 -> 64$ output lacks a third dimension for promotion piece selection. Promotions are instead handled via the search topology: when a pawn destination on the back rank is expanded, the corresponding edge is replaced by four sub-edges (Q, R, B, N), equally dividing the prior probability. This delegates under-promotion to the search tree, where the additional branching factor is amortized over many simulations.
 
 === Network Topology <network_topology>
-The model uses a Transformer Encoder architecture without convolutions (@dosovitskiy2020image). The spatial tensor $X$ is linearly projected to $d_"model"$, and $2D$ learned positional embeddings are added to retain geometric context. The meta-tensor $M$ is linearly projected and concatenated as a pseudo-[CLS] token, resulting in a sequence length of 65 (@monroe2024masteringchesstransformermodel).
+The model uses a transformer Encoder architecture without convolutions (@dosovitskiy2020image). The spatial tensor $X$ is linearly projected to $d_"model"$, and $2D$ learned positional embeddings are added to retain geometric context. The meta-tensor $M$ is linearly projected and concatenated as a pseudo-[CLS] token, resulting in a sequence length of 65 (@monroe2024masteringchesstransformermodel).
 
 The model is symmetrically scaled as a variant of ChessTransformer (@monroe2024masteringchesstransformermodel): $n_"heads" = 8$, $n_"layers" = 8$, $d_"model" = 8 times 64 = 512$, $d_"ff" = 4 times d_"model"$, meeting a middle ground between CF-6M and CF-240M.
 
@@ -375,7 +390,7 @@ To accommodate the two-pass autoregressive policy, the search tree alternates be
 
 A complete move thus traverses a (Selection, Action) pair. This bipartite structure explicitly mirrors the models autoregressive nature, physically separating the two failure modes of factored policy in the search tree.
 
-=== Selection and PUCT <puct>
+=== Edge Selection <puct>
 During traversals, edges are selected using a modified Predictor + Upper Confidence Bound applied to Trees (PUCT) algorithm (@silver2017masteringchessshogiselfplay). To mitigate draw-seeking behaviour, a contempt factor is baked into the empirical action value $Q(s, a)$.
 $
        Q(s, a) & = W - L - 0.05 D \
@@ -430,14 +445,14 @@ TODO
 = Implementation Details
 This chapter details the software architecture and engineering paradigms utilized to construct the self-play reinforcement learning system. The implementation translates the methodology into a high-throughput, reproducible execution environment optimized for three criteria: clean experimental toggling, sufficient throughput to complete four training runs within the project timeframe, and system auditability to isolate learning dynamics from engine artifacts.
 
-The architecture comprises a custom bitboard-based chess engine, a bipartite MCTS utilizing flat arena allocators, and a shared-weight Transformer encoder implemented via the Burn deep learning framework (@burn_framework). All components are parallelized to bridge theoretical design with optimized execution.
+The architecture comprises a custom bitboard-based chess engine, a bipartite MCTS utilizing flat arena allocators, and a shared-weight transformer encoder implemented via the Burn deep learning framework (@burn_framework). All components are parallelized to bridge theoretical design with optimized execution.
 
 == Software Stack and Overview <stack>
-The system is implemented entirely in Rust (@rust_language). The choice of Rust over C++ or Python is driven by the strict requirements of high-throughput MCTS. Python's Global Interpreter Lock (GIL) precludes true multithreading, forcing reliance on multi-processing which incurs prohibitive IPC serialization overhead for tree search. While C++ offers raw performance, complex concurrent tree mutations frequently introduce data races. Rust's ownership model and strict aliasing rules guarantee thread safety at compile time, enabling "fearless concurrency."
+The system is implemented entirely in Rust (@rust_language). The choice of Rust over C++ or Python is driven by the strict requirements of high-throughput MCTS. Python's Global Interpreter Lock (GIL) precludes true multithreading, forcing reliance on multi-processing which incurs prohibitive IPC serialization overhead for tree search. While C++ offers raw performance, complex concurrent tree mutations frequently introduce data races. Rust's ownership model and strict aliasing rules guarantee thread safety at compile time, enabling "fearless concurrency". *REFERENCE* //reference it properly according to Harvard rules https://doc.rust-lang.org/book/ch16-00-concurrency.html
 
-Neural network operations are executed via the Burn framework (@burn_framework). Unlike PyTorch's C++ bindings (LibTorch), which carry heavy binary bloat and tie execution to NVIDIA CUDA, Burn provides a backend-agnostic autograd module. By utilizing Burn's WGPU backend, the engine compiles to a standalone binary capable of executing hardware-accelerated tensor operations across CUDA, Metal, and Vulkan without environment configuration.
+Neural network operations are executed via the Burn framework (@burn_framework). Unlike PyTorch's C++ bindings (LibTorch), which carry heavy binary bloat and tie execution to NVIDIA CUDA, Burn provides a backend-agnostic autograd module. By utilizing Burn's WGPU backend, the engine compiles to a standalone binary capable of executing hardware-accelerated tensor operations across CUDA, Metal, and Vulkan without environment configuration. *REFERENCE*
 
-The self-play pipeline (@self-play) is designed for maximum throughput via lock-free concurrency. At the initialization of each training iteration, $B$ parallel game instances are spawned. As each MCTS instance encapsulates its own memory arenas, the Rayon library's `par_iter_mut()` is utilized to distribute tree traversals across all available CPU cores without mutex contention.
+The reinforcement learning loop is designed for maximum throughput via lock-free concurrency. At the initialization of each training iteration, $B$ parallel game instances are spawned. As each MCTS instance encapsulates its own memory arenas, the Rayon library's `par_iter_mut()` is utilized to distribute tree traversals across all available CPU cores without mutex contention.
 
 #figure(
   kind: "algorithm",
@@ -477,7 +492,7 @@ The self-play pipeline (@self-play) is designed for maximum throughput via lock-
 ) <self-play>
 
 == Chess Engine
-The environment is a custom chess engine optimized specifically for MCTS rollouts. State representation is strictly packed, and move generation relies on compile-time precomputed masks to minimize branching and minimize CPU cache misses.
+The environment is a custom chess engine optimized specifically for MCTS rollouts. State representation is tightly packed (@bitboards), and move generation relies on compile-time precomputed masks (@move_gen) to minimize branching and minimize CPU cache misses.
 
 === Bitboards <bitboards>
 Alternative state representations, such as $8 times 8$ mailbox arrays, require branching loops to evaluate sliding piece attacks. To maximize throughput, the board state is instead encoded using Bitboards (@cpw_bitboards). The `ChessBoard` struct uses a `[[Bitboard; 6]; 2]` array, representing the 6 piece types across 2 colors, alongside 3 aggregate occupancy bitboards (White, Black, All). The struct is annotated `#[repr(align(64))]` ensuring alignment with cache-line boundaries, preventing false sharing and making move generation cache-friendly under aggressive parallel access. Hardware intrinsics (`trailing_zeros` and `leading_zeros`) are used for $O(1)$ piece iteration and bit isolation.
@@ -501,7 +516,7 @@ The blocker square is included in the ray if it is occupied by an enemy piece (a
 State repetition detection requires hashing board states. Cryptographic hashes (e.g., SHA-256) are computationally prohibitive, and full-state serialization is cache-inefficient. Therefore, Zobrist hashing @Zobrist1970 is implemented. A static table of 64-bit pseudo-random keys (`ZobristKeys`) is lazily initialized using Rust's `OnceLock`. The hash is computed in $O(P)$ time, where $P$ is the number of active pieces, by XOR-ing the keys corresponding to the current board state, castling rights, en-passant file, and side-to-move. While incremental $O(1)$ hashing is theoretically optimal for sequential play, the $O(P)$ approach was selected to eliminate complex state-tracking across independent MCTS nodes. Profiling indicates this computational cost is negligible relative to network inference (@throughput).
 
 == Bipartite Monte Carlo Tree Search <bipartite_mcts>
-A standard MCTS represents a complete action as a single edge between two states. To map the search topology onto the network's two-pass autoregressive policy, the search tree is implemented as a bipartite graph alternating `PieceSelect` and `PieceMove` nodes (@method-mcts).
+A standard MCTS represents a complete action as a single edge between two states. *REFERENCE* To map the search topology onto the network's two-pass autoregressive policy, the search tree is implemented as a bipartite graph alternating `PieceSelect` and `PieceMove` nodes (@method-mcts). 
 
 === Arena Allocators <arenas>
 To avoid memory fragmentation and pointer-chasing overhead typically associated with recursive tree structures, the MCTS utilizes flat, index-based arena allocators (@hanson1988fast):
@@ -525,14 +540,16 @@ Nodes reference child edges and associated board states via `usize` indices. A d
 While Hanson's original arenas are deallocated in bulk, this implementation incorporates slab-style object reuse (@bonwick1994slab) to handle the high churn of MCTS subtrees. When subtrees are abandoned (e.g. after a move is chosen), their indices are returned to the freelist. By maintaining a freelist within the arena, abandoned node indices are recycled without requiring a full heap deallocation. Bulk edge insertion (`push_block`) searches for contiguous free slots. A garbage-collection pass recursively frees all nodes, edges, and board positions of abandoned subtrees. This keeps RAM proportional to the active search tree, enabling larger batch sizes.
 
 === Node Expansion, Promotions, and Terminals <expansion>
-Leaf expansion (@leaf_expansion) transitions the state machine. Expanding a `PieceSelect` edge generates a `PieceMove` node without altering the underlying board state. Expanding a `PieceMove` edge applies the move, computes the new Zobrist hash (@Zobrist1970), evaluates terminal states (including threefold repetition via path history), and generates a new `PieceSelect` node.
+Leaf expansion transitions the state machine. Expanding a `PieceSelect` edge generates a `PieceMove` node without altering the underlying board state. Expanding a `PieceMove` edge applies the move, computes the new Zobrist hash (@Zobrist1970), evaluates terminal states (including threefold repetition via path history), and generates a new `PieceSelect` node.
 
 Promotions are handled natively by the bipartite structure (@canonicalisation_tensors). When a pawn-to-back-rank destination is expanded, the MCTS intercepts the spatial prior $p$ and distributes it uniformly ($p slash 4$) across four discrete edges (Q, R, B, N), each carrying the corresponding promotion. This enables the model to handle underpromotions through search topology rather than increased output dimensionality.
+
+The fifty-move rule has been shortened to forty full moves (eighty plies) to bound maximum episode length and reduce MCTS memory footprint.
 
 #figure(
   kind: "algorithm",
   supplement: [Algorithm],
-  pseudocode-list(booktabs: true, title: smallcaps[Bipartite Leaf Expansion])[
+  pseudocode-list(booktabs: true, title: smallcaps[Leaf Expansion])[
     + *Require:* Leaf edge $e$, Network prior probabilities $P$, Search path history $H$
     + Let $N_("parent")$ be the parent node of $e$
     + *if* $N_("parent")$ is of type PieceSelect *then*
@@ -563,7 +580,7 @@ Promotions are handled natively by the bipartite structure (@canonicalisation_te
   ],
 ) <leaf_expansion>
 
-The fifty-move rule has been shortened to forty full moves (eighty plies) to bound maximum episode length and reduce MCTS memory footprint.
+
 
 === Edge Selection and Value Propagation <edge_selection>
 PUCT scoring uses the contempt-augmented variant derived in @puct:
@@ -581,7 +598,7 @@ $ p'_i = p_i / (1 - lambda) quad forall i in A_X (s) $
 where $A_X(s)$ denotes the active configuration ($A_L$ or $A_P$). The same $lambda$ is surfaced to the loss function as the curriculum coefficient described in @self-annealing-loss.
 
 == Neural Network Architecture
-The `ChessTransformer` is a shared-weight encoder mapping the spatial tensor and the meta-vector to a policy distribution and a W/D/L estimate.
+The `ChessTransformer` is a shared-weight encoder mapping the spatial tensor and the meta-vector to a policy distribution and a W/D/L estimate. As mentioned in @chess_by_machines, transformer architectures hold superior representational quality over alternative architectures such as the CNN, which hold spatial biases, and NNUE, which optimizes for search throughput over one-shot strength.
 
 === Tensor Construction <tensor_construction>
 Inputs are canonicalized to the side-to-move via `flip_board()` before being written into flat `Vec<f32>` slices and reshaped through Burn's `TensorData` API. This guarantees a contiguous memory layout before the host-to-device transfer, avoiding allocation churn.
@@ -593,8 +610,8 @@ Tensor shapes are as follows:
 As stated in @network_topology, the 64 spatial vectors are linearly projected to $d_("model") = 512$, and learnable rank/file embeddings of size 8 each are summed and broadcast across the grid before being added to the spatial token sequence. The meta-vector is projected and concatenated as a pseudo-[CLS] token at index 64, yielding a $65 times d_("model")$ sequence to be consumed by the encoder ($n_("layers") = 8$, $n_("heads") = 8$).
 
 After the encoder, the sequence bifurcates:
-- Tokens $0..63$ pass through a linear policy head producing 64 spatial logits.
-- Token $64$ is passed through a linear value head producing the W/D/L logits.
+- Tokens 0 ... 63 pass through a linear policy head producing 64 spatial logits.
+- Token 64 is passed through a linear value head producing the W/D/L logits.
 
 The model's `forward_classification` method dynamically applies action masking based on configuration. In masked configurations, a boolean tensor identifies illegal squares and `mask_fill` clamps the corresponding logits to $-10^9$ before softmax. In unmasked configurations this step is bypassed and the cross-entropy is computed against the raw distribution, enabling the creation of the curriculum coefficient $lambda$ in @self-annealing-loss.
 
@@ -602,10 +619,10 @@ The model's `forward_classification` method dynamically applies action masking b
 The training pipeline orchestrates data generation, buffer management, and gradient updates, with each stage engineered to minimize idle time on either CPU or GPU.
 
 === Value Head Bootstrapping <pretraining>
-Before the self-play loop begins, the value head is trained against a small dataset of positions annotated with mate-in-N evaluations (`mate_evals.tsv`, @lichess_db). One hundred gradient steps are run with the loss ratio fixed at $-1$ to ignore policy output. This step is negligible in wall-clock cost while greatly improving search tree efficiency.
+Before the self-play loop begins, the value head is trained against a small dataset of positions annotated with mate-in-N evaluations (`mate_evals.tsv`, @lichess_db). One hundred gradient steps are run with the loss ratio fixed at $-1$ to ignore policy output. This step is negligible in wall-clock cost while greatly improving search tree efficiency. //TODO: Update Lichess reference in biblio to match Harvard style for citing databases and add access date
 
 === Batch Expansion and Synchronization <expansion_synchronisation>
-The interface between the CPU-bound MCTS and the GPU-bound inference is implemented in `expand_batch` (@expand_batch). MCTS instances traverse independently in parallel until each has selected a leaf. The threads then synchronize, aggregating canonicalized input tensors and masks into a single batch. Following a unified forward pass, the resulting `NetworkLabels` (policy and value arrays) are scattered back to their respective MCTS instances for edge expansion and value backpropagation. This single-batch boundary is the only synchronization point in the entire self-play loop, scaling compute cost with batch size so long as the GPU has memory to spare.
+The interface between the CPU-bound MCTS and the GPU-bound inference is implemented in `expand_batch`. MCTS instances traverse independently in parallel until each has selected a leaf. The threads then synchronize, aggregating canonicalized input tensors and masks into a single batch. Following a unified forward pass, the resulting `NetworkLabels` (policy and value arrays) are scattered back to their respective MCTS instances for edge expansion and value backpropagation. This single-batch boundary is the only synchronization point in the entire self-play loop, scaling compute cost with batch size so long as the GPU has memory to spare.
 
 #figure(
   kind: "algorithm",
@@ -651,7 +668,7 @@ The `log_softmax`-then-multiply formulation is mathematically equivalent to a so
 
 == Performance and Correctness
 === Throughput and Memory <throughput>
-Engine throughput is dominated by the batched forward pass of the Transformer, with tree search and arena garbage collection running concurrently behind it. At a batch size and simulation count of $256$ each, steady-state resident memory sits at approximately $11$ GB system RAM and $10$ GB VRAM. CPU utilization remains at 7% while GPU (NVIDIA RTX 4000 Ada) utilization reaches 100%, confirming network inference as the primary system bottleneck.
+Engine throughput is dominated by the batched forward pass of the transformer, with tree search and arena garbage collection running concurrently behind it. At a batch size and simulation count of $256$ each, steady-state resident memory sits at approximately $11$ GB system RAM and $10$ GB VRAM. CPU utilization remains at 7% while GPU (NVIDIA RTX 4000 Ada) utilization reaches 100%, confirming network inference as the primary system bottleneck.
 
 === Verification and Testing <testing>
 Three independent layers of verification target the three independent failure modes of the system.
@@ -696,14 +713,37 @@ All hyperparameters used across the training runs are summarized in @hyperparams
   caption: [Hyperparameters held constant across all five configurations.],
 ) <hyperparams>
 
+// ========================================== // CHAPTER 5: Experimental Design // ==========================================
+//TODO: write up in full sentences pls, explaining the purpose of each axis - in this section, describe in detail so someone else can exactly replicate your experiment
 
-// ========================================== // CHAPTER 5: Results // ==========================================
+
+= Experimental Design
+== Axis 1
+*Environmental Constraints* dictate the value head's acquisition of survival heuristics.
+
+*Control:* Training on a strict legal ruleset.
+*Test:* Training on a pseudo-legal ruleset where the terminal state is the simpler, denser king capture $(K_"cap")$ over the highly sparse, complex ($A_l = nothing$). This variant of Chess fundamentally alters the Markov Decision Process (MDP) reward function $R(s, a)$ yielding a potentially smoother reward landscape, forcing the value head to learn survival heuristics (e.g., pins) rather than relying on hardcoded environment evaluations.
+
+
+== Axis 2
+*Action Masking* dictates the policy head's acquisition of piece kinematics.
+
+*Control:* Masked logits (illegal moves are mathematically eliminated prior to selection).
+*Test:* Unmasked logits (illegal moves are permitted by the network but penalized by the environment/loss function).
+*Ablation:* Unmasked logits with a fixed policy/value loss ratio, isolating the impact of the proposed self-annealing curriculum loss (@self-annealing).
+
+== Experimental Configurations
+
+Two orthogonal axes of environmental constraint are examined. Crucially, these axes isolate distinct learning targets: *Action Masking* dictates the policy head's acquisition of piece kinematics, while *Environmental Constraints* dictate the value head's acquisition of survival heuristics.
+
+
+
+// ========================================== // CHAPTER 6: Results // ==========================================
 = Results
-== Experimental Setup
 == Ruleset Convergence Analysis
 == Masking and Grokking Analysis
 
-// ========================================== // CHAPTER 6: CONCLUSION // ==========================================
+// ========================================== // CHAPTER 7: CONCLUSION // ==========================================
 = Conclusion
 == Project Evaluation
 == Limitations and Future Work
@@ -718,3 +758,4 @@ performance.
 
 // ========================================== // BIBLIOGRAPHY // ==========================================
 #bibliography("refs.bib", style: "harvard-cite-them-right")
+
