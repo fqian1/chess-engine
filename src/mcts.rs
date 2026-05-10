@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 use core::fmt;
 use log::{debug, info, trace};
-use rand::rngs::SmallRng;
+use rand::{Rng, rngs::SmallRng};
 use rand_distr::{Distribution, Gamma};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator},
@@ -211,7 +211,7 @@ pub struct Mcts {
 }
 
 impl Mcts {
-    pub fn from_game(game: &ChessGame, size: usize, config: MctsConfig) -> Self {
+    pub fn from_game(game: &ChessGame, size: usize, config: MctsConfig, rng: u64) -> Self {
         let node =
             MctsNode::PieceSelect { data: NodeData { chess_position_idx: 0, child_edge_range: None, value: None, is_terminal: false, visits: 0 } };
         let mut node_arena = Arena::<MctsNode>::new(size * 2);
@@ -220,7 +220,7 @@ impl Mcts {
         let mut position_arena = Arena::<ChessPosition>::new(size);
         position_arena.push(game.position.clone());
 
-        let rng = XorShift64::default();
+        let rng = XorShift64::new(rng);
 
         let past_hashes: Vec<_> = game.game_history.iter().map(|game| game.zobrist_hash).collect();
         let dead_nodes = Vec::new();

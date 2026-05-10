@@ -29,6 +29,8 @@
           pkgs.typstyle
           pkgs.flamegraph
           pkgs.heaptrack
+          pkgs.harper
+          pkgs.stockfish
         ];
 
         shellHook = ''

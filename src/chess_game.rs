@@ -25,6 +25,7 @@ pub struct ChessGame {
     pub position: ChessPosition,
     pub fullmove_counter: u32,
     pub game_history: Vec<ChessPosition>,
+    pub move_list: Vec<ChessMove>,
     pub outcome: Outcome,
 }
 
@@ -107,7 +108,7 @@ impl ChessGame {
 
         position.generate_pseudolegal();
 
-        Ok(ChessGame { position, fullmove_counter, game_history: Vec::new(), outcome: Outcome::Unfinished })
+        Ok(ChessGame { position, fullmove_counter, game_history: Vec::new(), move_list: Vec::new(), outcome: Outcome::Unfinished })
     }
 
     pub fn to_fen(&self) -> String {
@@ -213,10 +214,20 @@ impl ChessGame {
         if self.position.side_to_move == Color::Black {
             self.fullmove_counter += 1;
         }
+        self.move_list.push(*mov);
         self.position.make_move(mov);
 
         self.game_history.push(self.position.clone());
         self.position.generate_pseudolegal();
+    }
+
+    pub fn to_pgn(&self) -> String {
+        let mut pgn = String::new();
+        for (i, mov) in self.move_list.iter().enumerate() {
+            let bruh = format!("{}. {}", i, mov.to_uci());
+            pgn.push_str(&bruh);
+        }
+        pgn
     }
 
     pub fn unmake_move(&mut self) {
