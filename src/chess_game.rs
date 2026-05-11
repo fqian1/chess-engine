@@ -102,6 +102,7 @@ impl ChessGame {
             castling_rights: CastlingRights::from_fen(castling_str),
             en_passant,
             halfmove_clock,
+            fullmove_counter,
             zobrist_hash: 0,
             pseudolegal_moves: ArrayVec::<ChessMove, 128>::new(),
         };
@@ -109,57 +110,6 @@ impl ChessGame {
         position.generate_pseudolegal();
 
         Ok(ChessGame { position, fullmove_counter, game_history: Vec::new(), move_list: Vec::new(), outcome: Outcome::Unfinished })
-    }
-
-    pub fn to_fen(&self) -> String {
-        let mut fen = String::new();
-
-        for rank in (0..8).rev() {
-            let mut empty = 0;
-
-            for file in 0..8 {
-                let sq = ChessSquare::from_coords(file, rank).unwrap();
-                if let Some(ChessPiece { color, piece_type }) = self.position.chessboard.get_piece_at(sq) {
-                    if empty > 0 {
-                        fen.push_str(&empty.to_string());
-                        empty = 0;
-                    }
-
-                    let c = match piece_type {
-                        PieceType::Pawn => 'p',
-                        PieceType::Knight => 'n',
-                        PieceType::Bishop => 'b',
-                        PieceType::Rook => 'r',
-                        PieceType::Queen => 'q',
-                        PieceType::King => 'k',
-                    };
-
-                    fen.push(if color == Color::White { c.to_ascii_uppercase() } else { c });
-                } else {
-                    empty += 1;
-                }
-            }
-
-            if empty > 0 {
-                fen.push_str(&empty.to_string());
-            }
-            if rank > 0 {
-                fen.push('/');
-            }
-        }
-
-        fen.push(' ');
-        fen.push(if self.position.side_to_move == Color::White { 'w' } else { 'b' });
-        fen.push(' ');
-        fen.push_str(&self.position.castling_rights.to_fen());
-        fen.push(' ');
-        fen.push_str(&self.position.en_passant.map_or("-".to_string(), |sq| sq.name()));
-        fen.push(' ');
-        fen.push_str(&self.position.halfmove_clock.to_string());
-        fen.push(' ');
-        fen.push_str(&self.fullmove_counter.to_string());
-
-        fen
     }
 
     pub fn uci_to_move(&self, input: &str) -> Result<ChessMove, &str> {

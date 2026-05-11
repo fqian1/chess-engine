@@ -23,7 +23,11 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
+<<<<<<< HEAD
+use crate::{ChessBatcher, Color, PieceType, TrainingSample};
+=======
 use crate::{ChessBatcher, ChessPosition, Color, TrainingSample};
+>>>>>>> refs/remotes/origin/main
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,
     chess_game::Outcome,
@@ -47,7 +51,11 @@ impl Stockfish {
         let stdout = self.process.stdout.as_mut().unwrap();
         let mut reader = BufReader::new(stdout);
 
+<<<<<<< HEAD
+        writeln!(stdin, "position fen {}", board).unwrap();
+=======
         writeln!(stdin, "position fen {}", position.to_fen()).unwrap();
+>>>>>>> refs/remotes/origin/main
         writeln!(stdin, "go depth 12").unwrap();
 
         let mut line = String::new();

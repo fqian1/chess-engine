@@ -2,7 +2,7 @@ use core::fmt;
 
 use arrayvec::ArrayVec;
 
-use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome};
+use crate::{Bitboard, CastlingRights, ChessBoard, ChessMove, ChessPiece, ChessSquare, Color, PieceType, ZobristKeys, chess_game::Outcome};
 
 #[derive(Debug, Clone, Default)]
 pub struct ChessPosition {
@@ -11,6 +11,7 @@ pub struct ChessPosition {
     pub castling_rights: CastlingRights,
     pub en_passant: Option<ChessSquare>,
     pub halfmove_clock: u32,
+    pub fullmove_counter: u32,
     pub zobrist_hash: u64,
     pub pseudolegal_moves: ArrayVec<ChessMove, 128>,
 }
@@ -193,6 +194,58 @@ impl ChessPosition {
 
         self.pseudolegal_moves = moves;
     }
+
+    pub fn to_fen(&self) -> String {
+        let mut fen = String::new();
+
+        for rank in (0..8).rev() {
+            let mut empty = 0;
+
+            for file in 0..8 {
+                let sq = ChessSquare::from_coords(file, rank).unwrap();
+                if let Some(ChessPiece { color, piece_type }) = self.chessboard.get_piece_at(sq) {
+                    if empty > 0 {
+                        fen.push_str(&empty.to_string());
+                        empty = 0;
+                    }
+
+                    let c = match piece_type {
+                        PieceType::Pawn => 'p',
+                        PieceType::Knight => 'n',
+                        PieceType::Bishop => 'b',
+                        PieceType::Rook => 'r',
+                        PieceType::Queen => 'q',
+                        PieceType::King => 'k',
+                    };
+
+                    fen.push(if color == Color::White { c.to_ascii_uppercase() } else { c });
+                } else {
+                    empty += 1;
+                }
+            }
+
+            if empty > 0 {
+                fen.push_str(&empty.to_string());
+            }
+            if rank > 0 {
+                fen.push('/');
+            }
+        }
+
+        fen.push(' ');
+        fen.push(if self.side_to_move == Color::White { 'w' } else { 'b' });
+        fen.push(' ');
+        fen.push_str(&self.castling_rights.to_fen());
+        fen.push(' ');
+        fen.push_str(&self.en_passant.map_or("-".to_string(), |sq| sq.name()));
+        fen.push(' ');
+        fen.push_str(&self.halfmove_clock.to_string());
+        fen.push(' ');
+        fen.push_str(&self.fullmove_counter.to_string());
+
+        fen
+    }
+
 
     pub fn make_mask(&self, legal: bool, from_sq: Option<ChessSquare>) -> [bool; 64] {
         let mut mask = [false; 64];
