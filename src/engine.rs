@@ -12,7 +12,6 @@ use burn::{
     prelude::{Backend, ToElement},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
-use chess::Board;
 use log::{debug, info, trace};
 use rand::TryRng;
 use rand::seq::{IndexedRandom, IteratorRandom};
@@ -23,9 +22,8 @@ use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::str::FromStr;
 
-use crate::{ChessBatcher, ChessPiece, Color, PieceType, TrainingSample};
+use crate::{ChessBatcher, ChessPosition, Color, TrainingSample};
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,
     chess_game::Outcome,
@@ -44,14 +42,13 @@ impl Stockfish {
         Self { process }
     }
 
-    fn get_eval(&mut self, board: &Board) -> i32 {
+    fn get_eval(&mut self, position: &ChessPosition) -> i32 {
         let stdin = self.process.stdin.as_mut().unwrap();
         let stdout = self.process.stdout.as_mut().unwrap();
         let mut reader = BufReader::new(stdout);
 
-        // Send position to engine
-        writeln!(stdin, "position fen {}", board).unwrap();
-        writeln!(stdin, "go depth 12").unwrap(); // Depth 12 is fast for bulk
+        writeln!(stdin, "position fen {}", position.to_fen()).unwrap();
+        writeln!(stdin, "go depth 12").unwrap();
 
         let mut line = String::new();
         let mut cp = 0;
@@ -306,51 +303,36 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let loss_val = loss_total / training_config.gradient_steps as f32;
         let loss_val = loss_val.into_scalar().to_f32();
 
-        unsafe {
-            if training_config.legal {
-                let sample_count = (games.len() / 10).max(1);
-                let samples: Vec<&ChessGame> = games.iter().sample(&mut rng, sample_count);
-                let mut total_batch_acpl = 0.0;
-                let mut valid_games = 0;
+        if training_config.legal {
+            let sample_count = (games.len() / 10).max(1);
+            let samples: Vec<&ChessGame> = games.iter().sample(&mut rng, sample_count);
+            let mut total_batch_acpl = 0.0;
+            let mut valid_games = 0;
 
-                for game in samples {
-                    let mut board = Board::default();
-                    let mut game_acpl_sum = 0;
-                    let mut moves_in_game = 0;
+            for game in samples {
+                let mut game_acpl_sum = 0;
+                let mut moves_in_game = 0;
 
-                    for mov in game.move_list.iter() {
-                        let eval_before = stockfish.get_eval(&board);
+                for mov in game.move_list.iter() {
+                    let eval_before = stockfish.get_eval(&game.position);
 
-                        let from = chess::Square::new(mov.from.0);
-                        let to = chess::Square::new(mov.to.0);
+                    let mut position = game.position.clone();
+                    position.make_move(&mov);
 
-                        let prom = mov.promotion.map(|p| match p {
-                            PieceType::Pawn => chess::Piece::Pawn,
-                            PieceType::Knight => chess::Piece::Knight,
-                            PieceType::Bishop => chess::Piece::Bishop,
-                            PieceType::Rook => chess::Piece::Rook,
-                            PieceType::Queen => chess::Piece::Queen,
-                            PieceType::King => chess::Piece::King,
-                        });
+                    let eval_after = -stockfish.get_eval(&position);
 
-                        let chess_move = chess::ChessMove::new(from, to, prom);
-                        board = board.make_move_new(chess_move);
-
-                        let eval_after = -stockfish.get_eval(&board);
-
-                        let loss = (eval_before - eval_after).clamp(0, 1000);
-                        game_acpl_sum += loss;
-                        moves_in_game += 1;
-                    }
-
-                    if moves_in_game > 0 {
-                        total_batch_acpl += game_acpl_sum as f32 / moves_in_game as f32;
-                        valid_games += 1;
-                    }
+                    let loss = (eval_before - eval_after).clamp(0, 1000);
+                    game_acpl_sum += loss;
+                    moves_in_game += 1;
                 }
 
-                avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
+                if moves_in_game > 0 {
+                    total_batch_acpl += game_acpl_sum as f32 / moves_in_game as f32;
+                    valid_games += 1;
+                }
             }
+
+            avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
         }
 
         writeln!(
