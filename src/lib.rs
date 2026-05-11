@@ -13,6 +13,7 @@ pub mod engine;
 pub mod mcts;
 pub mod model;
 pub mod zobrist;
+pub mod stockfish;
 
 pub use bitboard::Bitboard;
 pub use burn;
@@ -28,3 +29,4 @@ pub use engine::*;
 pub use mcts::*;
 pub use model::ChessTransformer;
 pub use zobrist::{XorShift64, ZobristKeys};
+pub use stockfish::*;

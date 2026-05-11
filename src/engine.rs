@@ -19,11 +19,10 @@ use rand::{SeedableRng, rngs::SmallRng};
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::*;
 use std::fs::OpenOptions;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
 
-use crate::{ChessBatcher, ChessPosition, Color, TrainingSample};
+use crate::{ChessBatcher, Color, Stockfish, TrainingSample};
 use crate::{
     ChessGame, ChessTransformer, Mcts, MctsConfig, ReplayBuffer,
     chess_game::Outcome,
@@ -31,42 +30,6 @@ use crate::{
     expand_batch,
     model::ChessTransformerConfig,
 };
-
-struct Stockfish {
-    process: Child,
-}
-
-impl Stockfish {
-    fn new() -> Self {
-        let process = Command::new("stockfish").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("Failed to start Stockfish");
-        Self { process }
-    }
-
-    fn get_eval(&mut self, position: &ChessPosition) -> i32 {
-        let stdin = self.process.stdin.as_mut().unwrap();
-        let stdout = self.process.stdout.as_mut().unwrap();
-        let mut reader = BufReader::new(stdout);
-
-        writeln!(stdin, "position fen {}", position.to_fen()).unwrap();
-        writeln!(stdin, "go depth 12").unwrap();
-
-        let mut line = String::new();
-        let mut cp = 0;
-        loop {
-            line.clear();
-            reader.read_line(&mut line).unwrap();
-            if line.contains("score cp") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                let i = parts.iter().position(|&x| x == "cp").unwrap();
-                cp = parts[i + 1].parse().unwrap();
-            }
-            if line.contains("bestmove") {
-                break;
-            }
-        }
-        cp
-    }
-}
 
 #[derive(Config, Debug)]
 pub struct TrainingConfig {
@@ -190,7 +153,6 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     let mut replay_buffer = ReplayBuffer::new(524288);
     let mut games = vec![ChessGame::default(); training_config.batch_size];
     let mut mctss: Vec<Mcts> = games.iter().map(|game| Mcts::from_game(game, 16384, *mcts_config, rng.try_next_u64().unwrap())).collect();
-    let mut stockfish = Stockfish::new();
     let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
 
     let csv_path = format!("{}/metrics.csv", artifact_dir.to_str().unwrap_or("./tmp"));
@@ -303,37 +265,39 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let loss_val = loss_total / training_config.gradient_steps as f32;
         let loss_val = loss_val.into_scalar().to_f32();
 
-        if training_config.legal {
-            let sample_count = (games.len() / 10).max(1);
-            let samples: Vec<&ChessGame> = games.iter().sample(&mut rng, sample_count);
-            let mut total_batch_acpl = 0.0;
-            let mut valid_games = 0;
+        let sample_count = (games.len() / 10).max(1);
+        let samples: Vec<&ChessGame> = games.iter().sample(&mut rng, sample_count);
+        let mut total_batch_acpl = 0.0;
+        let mut valid_games = 0;
 
-            for game in samples {
-                let mut game_acpl_sum = 0;
-                let mut moves_in_game = 0;
+        for game in samples {
+            let mut game_acpl_sum = 0;
+            let mut moves_in_game = 0;
 
-                for mov in game.move_list.iter() {
-                    let eval_before = stockfish.get_eval(&game.position);
+            for mov in game.move_list.iter() {
+                let loss = if !&game.position.is_legal(mov) {
+                    1000
+                } else {
+                    let eval_before = Stockfish::with_global(|sf| sf.get_eval(&game.position));
 
                     let mut position = game.position.clone();
-                    position.make_move(&mov);
+                    position.make_move(mov);
 
-                    let eval_after = -stockfish.get_eval(&position);
+                    let eval_after = Stockfish::with_global(|sf| sf.get_eval(&position));
 
-                    let loss = (eval_before - eval_after).clamp(0, 1000);
-                    game_acpl_sum += loss;
-                    moves_in_game += 1;
-                }
-
-                if moves_in_game > 0 {
-                    total_batch_acpl += game_acpl_sum as f32 / moves_in_game as f32;
-                    valid_games += 1;
-                }
+                    (eval_before - eval_after).clamp(0, 1000)
+                };
+                game_acpl_sum += loss;
+                moves_in_game += 1;
             }
 
-            avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
+            if moves_in_game > 0 {
+                total_batch_acpl += game_acpl_sum as f32 / moves_in_game as f32;
+                valid_games += 1;
+            }
         }
+
+        avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
 
         writeln!(
             csv_file,
