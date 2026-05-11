@@ -849,6 +849,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "tempfile",
  "zstd 0.13.3",
 ]
 
