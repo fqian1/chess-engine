@@ -21,6 +21,7 @@ use rayon::prelude::*;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crate::{ChessBatcher, Color, Stockfish, TrainingSample};
 use crate::{
@@ -183,7 +184,6 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                         let (win, draw) = if color.is_none() { (0.0, 1.0) } else { (1.0, 0.0) };
                         let new_game = 1;
                         *game = ChessGame::default();
-                        info!("starting new game");
                         mcts.refresh(game);
                         return (length, win, draw, new_game);
                     }
@@ -229,7 +229,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
 
             for (sample, _) in new_samples {
                 if let Some(sample) = sample {
-                    info!("{}", sample);
+                    trace!("{}", sample);
                     replay_buffer.push(sample);
                 }
             }
@@ -265,29 +265,36 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
         let loss_val = loss_total / training_config.gradient_steps as f32;
         let loss_val = loss_val.into_scalar().to_f32();
 
-        let sample_count = (games.len() / 10).max(1);
-        let samples: Vec<&ChessGame> = games.iter().sample(&mut rng, sample_count);
+        let before = Instant::now();
         let mut total_batch_acpl = 0.0;
         let mut valid_games = 0;
 
-        for game in samples {
+        for game in games.iter() {
+            if game.move_list.is_empty() || matches!(game.check_game_state(training_config.legal), Outcome::Finished(_)){
+                continue;
+            }
+
             let mut game_acpl_sum = 0;
             let mut moves_in_game = 0;
 
-            for mov in game.move_list.iter() {
-                let loss = if !&game.position.is_legal(mov) {
+            let mut prev_cp = Stockfish::with_global(|sf| sf.get_eval(&game.game_history[0]));
+
+            for (i, mov) in game.move_list.iter().enumerate() {
+                let position_before = &game.game_history[i];
+                let position_after = &game.game_history[i + 1];
+
+                let cp_loss = if !position_before.is_legal(mov) {
                     1000
                 } else {
-                    let eval_before = Stockfish::with_global(|sf| sf.get_eval(&game.position));
+                    let current_cp = Stockfish::with_global(|sf| sf.get_eval(position_after));
 
-                    let mut position = game.position.clone();
-                    position.make_move(mov);
+                    let loss = (prev_cp as u32+ current_cp as u32).clamp(0, 1000);
 
-                    let eval_after = Stockfish::with_global(|sf| sf.get_eval(&position));
-
-                    (eval_before - eval_after).clamp(0, 1000)
+                    prev_cp = current_cp;
+                    loss 
                 };
-                game_acpl_sum += loss;
+
+                game_acpl_sum += cp_loss;
                 moves_in_game += 1;
             }
 
@@ -297,7 +304,10 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
             }
         }
 
-        avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
+        let avg_acpl = if valid_games > 0 { total_batch_acpl / valid_games as f32 } else { 0.0 };
+        let after = Instant::now();
+
+        println!("acpl evaluation took: {}", (after - before).as_secs_f32());
 
         writeln!(
             csv_file,

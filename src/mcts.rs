@@ -318,7 +318,6 @@ impl Mcts {
     }
 
     pub fn garbage_collect(&mut self) {
-        info!("garbage collecting {} nodes ({} total)", self.dead_nodes.len(), self.node_arena.buffer.len());
         while let Some(node) = self.dead_nodes.pop() {
             let mut stack = vec![node];
             while let Some(node_idx) = stack.pop() {
@@ -341,9 +340,9 @@ impl Mcts {
                 }
             }
         }
-        info!("positions cleared: {} ({})", self.position_arena.freelist.len(), self.position_arena.buffer.len());
-        info!("nodes cleared: {} ({})", self.node_arena.freelist.len(), self.node_arena.buffer.len());
-        info!("edges cleared: {} ({})", self.edge_arena.freelist.len(), self.edge_arena.buffer.len());
+        trace!("positions cleared: {} ({} total)", self.position_arena.freelist.len(), self.position_arena.buffer.len());
+        trace!("nodes cleared: {} ({} total)", self.node_arena.freelist.len(), self.node_arena.buffer.len());
+        trace!("edges cleared: {} ({} total)", self.edge_arena.freelist.len(), self.edge_arena.buffer.len());
     }
 
     fn add_leaf(&mut self, edge_idx: usize) -> Option<usize> {
