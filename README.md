@@ -1,6 +1,6 @@
 # Chess Engine
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 A Rust-based chess engine that combines Monte Carlo Tree Search (MCTS) with a Transformer neural network for self-play reinforcement learning. Built with the Burn deep learning framework.
 
@@ -23,11 +23,11 @@ This project implements an AlphaZero-style chess engine where a Transformer mode
 ## How to build from source:
 
 1. Ensure the rust toolchain is installed:
-   Linux/MacOS: ```
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   Linux/MacOS: 
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
    Windows: Find the installer here: https://rustup.rs/#
-   Tested on: rustc 1.96.0-nightly (f5eca4fcf 2026-04-09)
 
 2.  Clone the repository:
     ```bash
@@ -58,10 +58,17 @@ for big speed:
 --no-default-feature --features autotune --features cuda
 ```
 
+Tested on: rustc rustc 1.97.0-nightly (ca9a134e0 2026-04-26)
+
 Project structure: 
 ```
 ./
+├── bin/
+│   ├── stockfish*
+│   └── stockfish_source.txt
 ├── src/
+│   ├── bin/
+│   │   └── parse_data.rs
 │   ├── bitboard.rs
 │   ├── castling.rs
 │   ├── chess_board.rs
@@ -76,21 +83,30 @@ Project structure:
 │   ├── main.rs
 │   ├── mcts.rs
 │   ├── model.rs
+│   ├── stockfish.rs
 │   └── zobrist.rs
 ├── tests/
 │   └── tests.rs
 ├── Cargo.lock
 ├── Cargo.toml
+├── flake.lock
+├── flake.nix
 ├── LICENSE
+├── mate_evals.tsv
 ├── README.md
 ├── run.sh*
 ├── rust-analyzer.toml
-├── rustfmt.toml
-└── shell.nix
+└── rustfmt.toml
 ```
 
 Performance Notes: 
-The Engine was designed for interpretability and experimentation, training can take weeks, and isn't suited for competitive play against top engines.
-Memory (RAM) usage scales with batch size, and uses about 6x more system ram than vram.
+The Engine was designed for interpretability and experimentation, training can take weeks, and isn't suited for competitive play against top engines. System Memory usage scales with VRAM usage.
 
-Distributed under the MIT License. See LICENSE for more information.
+# Open Source Notices:
+This project incorporates the Stockfish chess engine (located in /bin), which is licensed under the GNU General Public License v3.0 (GPL v3).
+- Stockfish Source Code: You can find the original source code at stockfishchess.org or github.com/official-stockfish/Stockfish.
+- Modifications: The Stockfish binary included here has been compressed using UPX for size optimization, but the underlying source code remains unchanged.
+
+This project utilizes evaluation data from the [Lichess Open Database(https://database.lichess.org/#evals)]. We thank Lichess.org for providing this resource to the public.
+
+Distributed under the GPLv3 License. See LICENSE for more information.
