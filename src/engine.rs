@@ -213,7 +213,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                     let sample = mcts.make_targets(training_config.masked);
                     if let Some(mov) = mcts.get_move_to_play() {
                         game.make_move(&mov);
-                        debug!("\n{}", game.position);
+                        info!("\n{}", game.position);
                         trace!("\nSelected move: {}", &mov.to_uci());
                     };
                     // scale draw threshold down after 60 moves
@@ -284,6 +284,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                 let position_after = &game.game_history[i + 1];
 
                 let cp_loss = if !position_before.is_legal(mov) {
+                    info!("acpl loss: 1000");
                     1000
                 } else {
                     let current_cp = Stockfish::with_global(|sf| sf.get_eval(position_after));
@@ -291,6 +292,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
                     let loss = (prev_cp as u32+ current_cp as u32).clamp(0, 1000);
 
                     prev_cp = current_cp;
+                    info!("acpl loss: {}", loss);
                     loss 
                 };
 

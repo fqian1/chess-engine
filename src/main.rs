@@ -29,6 +29,9 @@ use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
 use clap::Parser;
 use env_logger::Builder;
+use log::debug;
+use rand::rngs::SmallRng;
+use serde::de;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -136,46 +139,55 @@ fn main() {
                 play::<MyAutodiffBackend>(&artifact_dir, &mcts_config, &training_config, &device);
             }
             "2" => {
-                // println!("Enter fen string: ");
-                // io::stdout().flush().unwrap();
-                // let mut input = String::new();
-                // io::stdin().read_line(&mut input).expect("Failed to read input");
-                // let game = ChessGame::from_fen(&input).unwrap_or_else(|_| {
-                //     println!("Failed to parse fen, creating default game");
-                //     ChessGame::default()
-                // });
-                // let _mcts = [Mcts::from_game(&game, 1000, mcts_config)];
-                //
-                // println!("printing artifact dir: {:?}", artifact_dir.clone());
-                //
-                // let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
-                // let record = recorder.load(artifact_dir.clone(), &device).expect("Failed to load .mpk model record");
-                //
-                // let model: ChessTransformer<MyInferenceBackend> = training_config.model.init(&device);
-                // let model = model.load_record(record);
-                //
-                // let mut training_config = training_config.clone();
-                // training_config.batch_size = 1;
-                //
-                // let inputs = vec![NetworkInputs::from_position(&game.position, None)];
-                //
-                // let out = model_make_outputs(model.clone(), &inputs, &training_config, None, &device);
-                //
-                // let sq = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
-                //
-                // let sq = sq.unwrap().0;
-                //
-                // let inputs = vec![NetworkInputs::from_position(&game.position, Some(&sq))];
-                //
-                // let out = model_make_outputs(model.clone(), &inputs, &training_config, None, &device);
-                //
-                // let sq2 = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
-                // let sq2 = sq2.unwrap().0;
-                //
-                // let mov = ChessMove::new(sq, sq2, None);
-                //
-                // // this is just no mcts raw guess, doesnt handle promotions either
-                // print!("\nI picked: {}\n", mov.to_uci());
+                println!("Enter fen string: ");
+                io::stdout().flush().unwrap();
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Failed to read input");
+                let mut game = ChessGame::from_fen(&input).unwrap_or_else(|_| {
+                    println!("Failed to parse fen, creating default game");
+                    ChessGame::default()
+                });
+                let _mcts = [Mcts::from_game(&game, 1000, mcts_config, 1234)];
+
+                println!("printing artifact dir: {:?}", artifact_dir.clone());
+
+                let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
+                let record = recorder.load(artifact_dir.clone(), &device).expect("Failed to load .mpk model record");
+
+                let model: ChessTransformer<MyInferenceBackend> = training_config.model.init(&device);
+                let model = model.load_record(record);
+
+                let mut training_config = training_config.clone();
+                training_config.batch_size = 1;
+
+                let inputs = vec![NetworkInputs::from_position(&game.position, None)];
+                debug!("{}", inputs[0]);
+
+                let mask = game.position.make_mask(true, None);
+                let out = model_make_outputs(model.clone(), &inputs, &training_config, mask.to_vec(), &device);
+                debug!("{}", out[0]);
+
+                let sq = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
+
+                let sq = sq.unwrap().0;
+
+                let inputs = vec![NetworkInputs::from_position(&game.position, Some(&sq))];
+                debug!("{}", inputs[0]);
+
+                let mask = game.position.make_mask(true, Some(sq));
+                let out = model_make_outputs(model.clone(), &inputs, &training_config, mask.to_vec(), &device);
+                debug!("{}", out[0]);
+
+                let sq2 = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
+                let sq2 = sq2.unwrap().0;
+
+                let mov = ChessMove::new(sq, sq2, None);
+
+                // this is just no mcts raw guess, doesnt handle promotions either
+                print!("\nI picked: {}\n", mov.to_uci());
+                game.make_move(&mov);
+                // println!("{}", game.position);
+                println!("{}", game.position.to_fen());
             }
             _ => println!("Invalid - select {{1|2}}"),
         }

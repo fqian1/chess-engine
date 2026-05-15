@@ -340,9 +340,9 @@ impl Mcts {
                 }
             }
         }
-        trace!("positions cleared: {} ({} total)", self.position_arena.freelist.len(), self.position_arena.buffer.len());
-        trace!("nodes cleared: {} ({} total)", self.node_arena.freelist.len(), self.node_arena.buffer.len());
-        trace!("edges cleared: {} ({} total)", self.edge_arena.freelist.len(), self.edge_arena.buffer.len());
+        info!("positions cleared: {} ({} total)", self.position_arena.freelist.len(), self.position_arena.buffer.len());
+        info!("nodes cleared: {} ({} total)", self.node_arena.freelist.len(), self.node_arena.buffer.len());
+        info!("edges cleared: {} ({} total)", self.edge_arena.freelist.len(), self.edge_arena.buffer.len());
     }
 
     fn add_leaf(&mut self, edge_idx: usize) -> Option<usize> {
@@ -484,6 +484,7 @@ impl Mcts {
         }
 
         let targets = NetworkLabels { policy: target_policy, value: root_value };
+        debug!("---- training sample ----\n{}", TrainingSample { inputs, targets, mask });
         (Some(TrainingSample { inputs, targets, mask }), root_value)
     }
 
@@ -622,6 +623,9 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
         .map(|game| {
             let node_idx = game.node_to_expand().expect("path is none");
             inputs.push(game.get_network_input(node_idx));
+
+            debug!("\n---- position ----\n{}", game.get_network_input(node_idx));
+
             let node = &game.node_arena.buffer[node_idx];
 
             if node.get_data().is_terminal {
@@ -686,8 +690,9 @@ pub fn expand_batch<B: Backend>(mctss: &mut [Mcts], model: ChessTransformer<B>, 
 
             let rate: f64 = mask.iter().zip(policy.iter()).map(|(legal, policy)| if !legal { policy.1 as f64 } else { 0.0 }).sum();
 
-            trace!("\n{}", output);
-            debug!("{}", position);
+
+            // debug!("---- chess position ----\n{}\n---- chess position -----", position);
+            debug!("\n---- network output ----\n{}", output);
 
             if !config.masked {
                 // normalise policy distribution if unmasked

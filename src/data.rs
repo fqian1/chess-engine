@@ -57,13 +57,11 @@ pub struct NetworkLabels {
 impl fmt::Display for NetworkLabels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
-        output.push_str("______________\n");
+        output.push_str("\n");
         for i in (0..8).rev() {
             for j in 0..8 {
                 let val = self.policy[i * 8 + j];
-                let formatted = format!("{:.1}", val);
-
-                output.push_str(formatted.strip_prefix("0.").unwrap_or("9"));
+                output.push_str(&format!("{}", (val*64.0).floor()));
                 output.push(' ');
             }
             output.push('\n');
@@ -72,6 +70,25 @@ impl fmt::Display for NetworkLabels {
         write!(f, "{}", output)
     }
 }
+
+// impl fmt::Display for NetworkLabels {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         let mut output = String::new();
+//         output.push_str("______________\n");
+//         for i in (0..8).rev() {
+//             for j in 0..8 {
+//                 let val = self.policy[i * 8 + j];
+//                 let formatted = format!("{:.2}", val);
+//
+//                 output.push_str(formatted.strip_prefix("0.").unwrap_or("9"));
+//                 output.push(' ');
+//             }
+//             output.push('\n');
+//         }
+//         output.push_str(&format!("{:?}", self.value));
+//         write!(f, "{}", output)
+//     }
+// }
 
 impl Default for NetworkInputs {
     fn default() -> Self {
