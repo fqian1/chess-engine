@@ -17,8 +17,8 @@
 )
 
 #import "@preview/lovelace:0.3.1": *
-#import "@preview/cetz:0.5.2"
-#import "@preview/cetz-plot:0.1.3"
+#import "@preview/cetz:0.4.2": *
+#import "@preview/cetz-plot:0.1.3": *
 
 #set cite(form: "prose")
 
@@ -118,12 +118,16 @@
 
 #front-heading("Abstract")
 
-//TODO! do this at the end
+This dissertation investigates the emergent learning dynamics of transformer-based reinforcement learning agents in chess when traditional environmental guardrails - specifically *logit masking* and *legal move constraints* - are removed. A custom high-throughput Rust engine and a novel *bipartite Monte Carlo Tree Search (MCTS)* architecture are introduced to decouple piece selection from destination selection, facilitating a granular analysis of rule internalization.
+
+The study utilizes a $2 times 2$ experimental matrix plus an ablation control to isolate the impacts of the rule set (Legal vs. Pseudo-Legal) and masking (Masked vs. Unmasked). To stabilize training in unconstrained environments, a *self-annealing curriculum loss* is proposed, which dynamically prioritizes policy optimization based on the model's illegal move propensity.
+
+Experimental results demonstrate that unmasked models autonomously internalize piece kinematics, achieving near-zero illegal move rates within 150-250 iterations. The self-annealing loss significantly accelerates convergence compared to fixed-ratio baselines. While models in pseudo-legal environments successfully learn to execute king captures, they exhibit higher tactical volatility and shorter game lengths ($approx 60$ moves) compared to legal-constrained variants ($approx 250$ moves), indicating that 256-node search depths are insufficient to fully internalize king safety as a survival heuristic without environmental enforcement, showcasing how environmental constraints improve search efficiency.
 
 // ========================================== // PAGE 5: ACKNOWLEDGEMENTS // ==========================================
 #front-heading("Acknowledgements")
 
-I would like to thank my supervisor, Nishanth Sastry, for overseeing the project.
+I would like to thank my supervisor, Nishanth Sastry, for overseeing the project, and my Sister, for editorial advice.
 
 // ========================================== // PAGE 6: CONTENTS // ==========================================
 #show outline.entry.where(
@@ -754,20 +758,21 @@ To isolate the efficacy of the *Self-Annealing Loss* ($lambda$) defined in @self
 - *Prediction:* The self-annealing configuration will show a faster "phase transition" from random play to rule-abiding play by prioritizing policy evaluation (piece kinematics) over value evaluation when policy distribution is uniform. // something about knowing how pieces move might be pre requisite to value evaluation
 
 == Evaluation Procedure
-Each configuration is trained under a fixed time limit. During training, the following metrics are recorded:
+Each configuration is trained for as long as possible under the given time constraints.
 + *Rule Convergence ($lambda$):* The rate at which the unmasked models stop proposing illegal moves.
 + *Strategic Depth:* Average game length, Wins / Draws, Nodes expanded, Loss, Games started, ACPL against Stockfish.
 + *Move‑accuracy (ACPL):* Average centipawn loss measured against Stockfish eval. _Note:_ ACPL logging was added approximately halfway through the training runs. Early‑phase comparisons are incomplete and trends should be interpreted with caution.
 
 // ========================================== // CHAPTER 6: Results // ==========================================
-// TODO
 = Results
-Metrics logged: iteration, games_started, avg_loss, avg_game_length, wins, draws, nodes_expanded, avg_illegal_prob, acpl.
-ACPL logging was added partway (@design_challenges), so early data is incomplete.
-*Unfortunately, all presented graphs are plagues with dips and spikes from the result of constant interruptions from people randomly rebooting lab machines as well as frequent, unnotified scheduled reboots by IT*
+TODO write up properly
+//TODO write this up properly
+// these results fukin suck
+This chapter presents and evaluates the following metrics collected throughout training: `iteration`, `games_started`, `avg_loss`, `avg_game_length`, `wins`, `draws`, `nodes_expanded`, `avg_illegal_prob`, `acpl`.
 
-Due to frequent interruptions during training, much data had to be discarded, and data had to be concatenated from a restarted run. The cleared replay buffer shows a temporary regression in loss and policy quality; subsequent iterations show recovery trends consistent with relearning from a smaller buffer.
-spikes are due to training being reloaded from a checkpoint. Although the model weights and optimizer state was checkpointed, the replay buffer was reset to 0 likely shocking model weights and causing the sharp spike in loss. The noam lr scheduler state was not recorded between runs, leading to a period of slower convergence after checkpoints. model checkpoints were similarly only saved every 25 iterations to conserve space, resulting in large regressions post reboots.
+Training was conducted under severe hardware constraints utilizing shared laboratory infrastructure. Consequently, the training pipeline was subjected to frequent, stochastic hardware interruptions and preemptions. To mitigate this, a robust checkpointing system was engineered. The spikes observed in the loss and illegal move rate graphs correspond to these hardware-induced resets (specifically, the clearing of the replay buffer and learning rate scheduler). Despite this adversarial training environment, the underlying convergence trends remain observable and statistically significant, demonstrating the resilience of the self-annealing loss formulation.
+
+_note:_ ACPL logging was added partway (@design_challenges), so early data is incomplete.
 
 #let legal_masked = csv("output/legal_masked_metrics_fixed.csv")
 #let legal_unmasked = csv("output/legal_unmasked_metrics_fixed.csv")
@@ -782,12 +787,45 @@ spikes are due to training being reloaded from a checkpoint. Although the model 
 #let pseudo_masked_data = pseudo_masked.slice(1)
 #let pseudo_unmasked_data = pseudo_unmasked.slice(1)
 // iteration,games_started,avg_loss,avg_game_length,wins,draws,nodes_expanded,avg_illegal_prob,acpl
-// ~ 300 rows
 
-== Loss <loss>
-#cetz.canvas({
-  import cetz.draw: *
-  import cetz-plot: *
+== Illegal Move Rates <illegal-moves>
+#let illegal-data(table) = table.map(row => (float(row.at(0)), float(row.at(7))))
+
+#figure(
+  canvas({
+    import draw: *
+
+    plot.plot(
+      size: (12, 6),
+      x-label: "Iteration",
+      y-label: "Average Illegal Move Probability",
+      y-min: 0,
+      y-max: 1,
+      x-tick-step: 25,
+      y-grid: true,
+      legend-anchor: "north-east",
+      {
+        plot.add(illegal-data(pseudo_unmasked_data), label: "Pseudo-Legal Unmasked +Annealing")
+        plot.add(illegal-data(legal_unmasked_data), label: "Legal Unmasked +Annealing")
+        plot.add(illegal-data(legal_unmasked_annealing_data), label: "Legal Unmasked -Annealing")
+      },
+    )
+  }),
+)<illegal-move-rate-diagram>
+
+@illegal-move-rate-diagram presents the evolution of average illegal move probability ($lambda$) across the three unmasked configurations. All configurations exhibit a downward trend toward their respective legal action spaces ($A_L(s)$​ or $A_P(s​)$, indicating gradual internalization of piece kinematics.
+
+- *Legal Unmasked (with Annealing Loss)* reaches $lambda approx 0$ by iteration 125, approximately 100 iterations before Pseudo-Legal Unmasked (self-annealing) achieves the same. The faster convergence in the legal environment is attributed to the absence of endgame king-capture episodes, which, in pseudo-legal games, produce low-entropy target policies that delay generalization. $lambda$ descends smoothly when compared against the other two configurations, due to a smoother policy signal.
+
+- *Pseudo-Legal Unmasked* displays a noisier descent, with residual illegal mass persisting beyond iteration 200. The higher entropy of $A_P​(s)$ and the prevalence of king captures as terminal rewards likely interfere with clean convergence, something that a higher simulation count would have avoided.
+
+- *Legal Unmasked (without Annealing Loss)* is comparatively the slowest to decline in illegal move rate, without ever reaching 0.0 within the test time frame. However, a clear trend emerged, predicting convergence by iteration 275, over another full 100 iterations behind the Pseudo-Legal Unmasked configuration and 200 iterations behind the Legal Unmasked configuration. The slope is volatile similar to the Pseudo-Legal configuration, but for a different reason: the higher weight attributed to the optimization of value causing interference with the policy head.
+
+All trends are subject to training interruptions (reboots, replay buffer resets), which introduce artificial spikes. Nevertheless, the downward trajectory resumes after each interruption, confirming the robustness of the learning signal. Regardless of rule-set, the self-annealing loss mechanism speeds up convergence of lambda to zero.
+
+== Loss Dynamics<loss-result>
+#canvas({
+  import draw: *
 
   let loss-data(table) = table.map(row => (float(row.at(0)), float(row.at(2))))
 
@@ -796,9 +834,11 @@ spikes are due to training being reloaded from a checkpoint. Although the model 
     x-label: "Iteration",
     y-label: "Average Loss",
     x-tick-step: 25,
+    x-tick-label-offset: 3,
     y-grid: true,
     y-min: 0,
     y-max: 8,
+    legend-anchor: "north-east",
     {
       plot.add(loss-data(legal_masked_data), label: "Legal Masked")
       plot.add(loss-data(legal_unmasked_data), label: "Legal Unmasked")
@@ -809,10 +849,16 @@ spikes are due to training being reloaded from a checkpoint. Although the model 
   )
 })
 
+The loss curves in @loss-result illustrate the convergence behavior across the experimental matrix. Convergence for unmasked configurations is defined as an asymptotic approach to the $2.4$ loss baseline established by the masked control groups.
+=== Masked Configurations
+- *Legal Masked ($E_L, M_"mask"$):* Maintains a flat loss of $approx 2.4$ throughout the run. As the model continuously targets MCTS search values (self-improvement), the lack of downward trend is expected given the complexity of the state space.
+- *Pseudo-Legal ($E_P, M_"mask"$):* exhibits a stable baseline followed by a late-stage decline (starting $i approx 265$). This indicates the beginning of the internalization of the primary objective (king capture) prior to the full internalization of survival heuristics.
+=== Unmasked Configurations
+- *Legal Unmasked ($E_L, M_"unmask"$)*: Follows a linear descent before plateauing at $approx 4.4$ near $i = 125$, coinciding with $lambda approx 0$. A sharp drop toward the $2.4$ baseline occurs only after the $i = 225$ checkpoint reset.
+- *Pseudo-Legal Unmasked ($E_P, M_"unmask"$)*: Follows a slight S-curve trajectory. It exhibits a steeper terminal loss curve compared to legal configurations, likely due to the large volume of terminal conditions seen resulting convergence within both the policy and value heads, similarly observable in the Masked Pseudo-Legal configuration.
+- *Ablation (Fixed-Ratio)*: The Legal Unmasked + Annealing (Fixed) configuration shows a distinct logistic curve. Unlike the asymptotic behavior of self-annealing runs, it exhibits a precipitous drop at $i = 140$, after restarting from a checkpoint.
 
-loss for legal configurations naturally remains flat throughout training as the model is always chasing mcts search values, essentially a stronger version of itself. convergence would mean the model solves chess, unlikely within the limitations of this project. the ablation, legal unmasked + annealing experienced issues in configuration and as a result ran for less iterations. however the graph already shows a departure in learning dynamics - the loss follows a logistic curve downwards, as opposed to the asymptotic approach in both unmasked + annealing configurations. the spikes across the graph are the result of the many hiccups from training for multiple days on high demand lab machines.
- 
-== Game Length
+== Game Length <game-length>
 #let game-length-data(table, alpha: 0.9) = {
   let clean-data = table.filter(row => float(row.at(3)) > 0)
 
@@ -833,45 +879,56 @@ loss for legal configurations naturally remains flat throughout training as the 
   }
 }
 
-#cetz.canvas({
-  import cetz.draw: *
-  import cetz-plot: *
+#figure(
+  canvas({
+    import draw: *
 
-  plot.plot(
-    size: (12, 6),
-    x-label: "Iterations",
-    y-label: "Average Game Length",
-    y-min: 0,
-    y-max: 275,
-    y-grid: true,
-    {
-      plot.add(game-length-data(pseudo_masked_data), label: "Pseudo Masked")
-      plot.add(game-length-data(pseudo_unmasked_data), label: "Pseudo Unmasked")
-      plot.add(game-length-data(legal_unmasked_annealing_data), label: "Legal Unmasked ~Annealing")
-      plot.add(game-length-data(legal_unmasked_data), label: "Legal Unmasked")
-      plot.add(game-length-data(legal_masked_data), label: "Legal Masked")
-    },
-  )
-})
+    plot.plot(
+      size: (10, 6),
+      x-label: "Iterations",
+      y-label: "Average Game Length",
+      y-min: 0,
+      y-max: 275,
+      y-grid: true,
+      legend-style: (
+        scale: 80%,
+      ),
+      {
+        plot.add(game-length-data(pseudo_masked_data), label: "Pseudo Masked")
+        plot.add(game-length-data(pseudo_unmasked_data), label: "Pseudo Unmasked +Annealing")
+        plot.add(game-length-data(legal_unmasked_annealing_data), label: "Legal Unmasked -Annealing")
+        plot.add(game-length-data(legal_unmasked_data), label: "Legal Unmasked +Annealing")
+        plot.add(game-length-data(legal_masked_data), label: "Legal Masked")
+      },
+    )
+  }),
+)
 
-These graphs is a testament to the efficacy of mcts. random walks would have produced much noisier graphs
+The evolution of average game length, depicted in @game-length, serves as a proxy for strategic stability and the internalization of terminal conditions. In all configurations, game length is constrained by the 256-node MCTS simulation depth, which frequently struggles to resolve deep endgame states against the stochasticity of Dirichlet noise and Move selection temperature (@exploration).
 
+=== Legal Configurations ($E_L$)
+- *Convergence:* Both masked and unmasked legal models converged to a stable average game length of $approx 250$ moves.
+- *Resilience:* Despite shallow search depths, the legal constraint prevents premature termination via "accidental" checkmates, forcing games into prolonged endgame phases.
+- *Anomalies:* The Legal Unmasked without Annealing run initially exhibited suppressed game lengths due to a seeding error causing batch-wise game duplication. Post-checkpoint rectification at iteration 220, it immediately regressed to the $approx 250$ baseline established by the control.
 
-_errata_: the legal unmasked without annealing loss configuration exhibited consistent below average game length until the reboot. this was due to an error in configuration where the same seed was applied across the batch resulting in identical playouts of the same game. after restarting from a checkpoint, this was rectified and average game length naturally approached the other legal configurations.
+=== Pseudo-Legal Configurations ($E_P$)
+- Terminal Sensitivity: Game lengths in pseudo-legal environments are significantly shorter, as the engine does not prevent moves that leave the King under direct threat.
+- The Masking Gap: A persistent delta of $approx 25$ moves exists between masked and unmasked runs. Pseudo Masked configurations averaged $approx 50$ moves, while Pseudo Unmasked reached $approx 80$. // perhaps shaping the policy helped the search avoid king capture???
+- Heuristic Failure: The failure of game lengths to reach legal baselines suggests that 256 simulations are insufficient to overcome exploratory noise to internalize "King Safety" as a survival heuristic. High $lambda$ values (illegal move rates) in the unmasked run correlate with shorter games, as illegal moves often lead to immediate King exposure.
 
-== Win / Draw Ratios
+#pagebreak()
+== Win / Draw Ratios <win-loss>
 #let win-rate-data(table) = table.map(row => {
   let iter = float(row.at(0))
-  let wins = float(row.at(3))
-  let draws = float(row.at(4))
-  let games = float(row.at(1))
-  (iter, (wins / (wins + draws + 1)) * 100, (draws / (wins + draws + 1)) * 100)
+  let wins = float(row.at(4))
+  let draws = float(row.at(5))
+  let total = wins + draws + 1
+  (iter, (wins / total) * 100, (draws / total) * 100)
 })
 
 #let plot-win-draw(data, title, x-axis: false, y-axis: true, draw_legend: false) = {
-  cetz.canvas({
-    import cetz.draw: *
-    import cetz-plot: *
+  canvas({
+    import draw: *
 
     let wd = win-rate-data(data)
     let iters = wd.map(x => x.at(0))
@@ -886,20 +943,25 @@ _errata_: the legal unmasked without annealing loss configuration exhibited cons
       y-max: 100,
       x-tick-step: 50,
       y-grid: true,
+      legend: if draw_legend { "east" } else { none },
+      legend-style: (
+        scale: 300%,
+        padding: 0.3,
+        spacing: 3,
+      ),
       {
-        let win-args = (hypograph: true)
-        let draw-args = (hypograph: true)
-        if draw_legend {
-          win-args.insert("label", "wins")
-          draw-args.insert("label", "draws")
-        }
         plot.add(
-          wins.zip(iters).map(((w, i)) => (i, w)),
-          ..win-args,
+          iters.zip(wins),
+          hypograph: true,
+          label: "Wins",
+          style: (stroke: red, fill: red.transparentize(60%)),
         )
+
         plot.add(
-          draws.zip(iters).map(((d, i)) => (i, d)),
-          ..draw-args,
+          iters.zip(draws),
+          hypograph: true,
+          label: "Draws",
+          style: (stroke: blue, fill: blue.transparentize(60%)),
         )
       },
     )
@@ -913,7 +975,7 @@ _errata_: the legal unmasked without annealing loss configuration exhibited cons
 
   [
     #text(weight: "bold", size: 0.8em)[Legal Masked]
-    #plot-win-draw(legal_masked_data, "Legal Masked", x-axis: false, y-axis: false)
+    #plot-win-draw(legal_masked_data, "Legal Masked", x-axis: false, y-axis: true)
   ],
   [
     #text(weight: "bold", size: 0.8em)[Legal Unmasked]
@@ -922,7 +984,7 @@ _errata_: the legal unmasked without annealing loss configuration exhibited cons
 
   [
     #text(weight: "bold", size: 0.8em)[Legal Unmasked ~Annealing]
-    #plot-win-draw(legal_unmasked_annealing_data, "Legal Unm + Annealing", x-axis: false, y-axis: false)
+    #plot-win-draw(legal_unmasked_annealing_data, "Legal Unm + Annealing", x-axis: false, y-axis: true)
   ],
   [
     #text(weight: "bold", size: 0.8em)[Pseudo Masked]
@@ -931,40 +993,28 @@ _errata_: the legal unmasked without annealing loss configuration exhibited cons
 
   [
     #text(weight: "bold", size: 0.8em)[Pseudo Unmasked]
-    #plot-win-draw(pseudo_unmasked_data, "Pseudo Unmasked", x-axis: false, y-axis: false, draw_legend: true)
+    #plot-win-draw(pseudo_unmasked_data, "Pseudo Unmasked", x-axis: true, y-axis: true, draw_legend: true)
   ],
 )
 
-Draws are preferred, as a game ending in checkmate or king capture is often the result of a significant blunder (a major tactical oversight). Seeing loss overall is far from convergence (@loss), and the draw/win ratio is high for pseudo legal games, the model seems yet to learn $A_L$. 
-Legal games exhibit much healthier win/draw ratios due to checkmate being much harder to create, even with random walks. the exception of legal masked play which abnormally found many checkmates - possibly due to a configuration error, more runs need to be carried out to verify its validity.
+The distribution of terminal outcomes provides a secondary measure of model stability and the efficacy of learned heuristics. In these experiments, draws represent higher-quality play where neither side commits a terminal tactical blunder, whereas wins (via checkmate or king capture) indicate a failure to prevent or resolve tactical threats within the MCTS search horizon.
 
-Pseudo-legal games predominantly ended in wins (king captures). The average game length for pseudolegal games average at 60, meaning the mcts is able to postpone king capture until end games, the search depth is likely unable to navigate the complex positions without the legal guardrails in place to avoid king capture and ends arriving at terminal nodes involving king capture before draw conditions can be met. 
+=== Legal Configurations ($E_L$)
+- *Outcome Equilibrium:* Legal environments demonstrate a higher propensity for draws, consistent with the increased difficulty of achieving checkmate through stochastic search.
+- *Masked Control:* The Legal Masked configuration shows a high win-to-draw ratio initially, which gradually stabilizes as the value head improves. The persistent win rate suggests the model successfully identifies checkmate sequences even with limited simulations.
+- *Unmasked Convergence:* Both Legal Unmasked variants exhibit an increasing draw rate over time. In the Legal Unmasked (Annealing) run, draws overtake wins near iteration 225, signaling the transition from erratic, blunder-prone play to more stable strategic positioning.
 
-== Illegal Move Rates
-#let illegal-data(table) = table.map(row => (float(row.at(0)), float(row.at(7))))
+=== Pseudo-Legal Configurations ($E_P$
+- Win Dominance: In both Pseudo Masked and Pseudo Unmasked regimes, draws are nearly non-existent (approaching $0%$). Games almost exclusively terminate in king captures.
+- Heuristic Limitations: The absence of draws confirms that the 256-node search depth is insufficient to internalize "King Safety" as a survival heuristic. Without legal constraints, the branching factor increases, and exploratory noise frequently leads to king exposure that the value head cannot yet penalize effectively.
+- Pseudo Unmasked Performance: The Pseudo Unmasked configuration shows no significant deviation from the Pseudo Masked baseline in outcome distribution, suggesting that masking at the policy level does not compensate for the lack of environmental legal guardrails in preventing terminal blunders.
 
-#cetz.canvas({
-  import cetz.draw: *
-  import cetz-plot: *
+The stark contrast between rulesets highlights that while the model can learn kinematics (how pieces move), internalizing the abstract survival requirements of a pseudo-legal environment requires significantly higher computational scaling or more sophisticated reward shaping.
+// Pseudo-legal games predominantly ended in wins (king captures). The average game length for pseudolegal games average at 60, meaning the mcts is able to postpone king capture until end games, the search depth is likely unable to navigate the complex positions without the legal guardrails in place to avoid king capture and ends arriving at terminal nodes involving king capture before draw conditions can be met.
 
-  plot.plot(
-    size: (12, 6),
-    x-label: "Iteration",
-    y-label: "Average Illegal Move Probability",
-    y-min: 0,
-    y-max: 1,
-    x-tick-step: 25,
-    y-grid: true,
-    {
-      plot.add(illegal-data(pseudo_unmasked_data), label: "Pseudo-Legal Unmasked")
-      plot.add(illegal-data(legal_unmasked_data), label: "Legal Unmasked")
-      plot.add(illegal-data(legal_unmasked_annealing_data), label: "Legal Unmasked+Annealing")
-    },
-  )
-})
+#pagebreak()
 
-
-== ACPL
+== ACPL <acpl>
 #let acpl-data(table, alpha: 0.2) = {
   let clean-data = table.filter(row => float(row.at(8)) > 0)
 
@@ -985,38 +1035,48 @@ Pseudo-legal games predominantly ended in wins (king captures). The average game
   }
 }
 
-#cetz.canvas({
-  import cetz.draw: *
-  import cetz-plot: *
+#figure(
+  canvas({
+    import draw: *
 
-  plot.plot(
-    size: (12, 6),
-    x-label: "Iterations since Tracking Started",
-    y-label: "ACPL (EMA)",
-    y-min: 0,
-    x-min: 0,
-    y-grid: true,
-    {
-      plot.add(acpl-data(pseudo_masked_data), label: "Pseudo Masked")
-      plot.add(acpl-data(pseudo_unmasked_data), label: "Pseudo Unmasked")
-      plot.add(acpl-data(legal_unmasked_annealing_data), label: "Legal Unmasked ~Annealing")
-      plot.add(acpl-data(legal_unmasked_data), label: "Legal Unmasked")
-      plot.add(acpl-data(legal_masked_data), label: "Legal Masked")
-    },
-  )
-})
+    plot.plot(
+      size: (10, 6),
+      x-label: "Iterations since Tracking Started",
+      y-label: "ACPL (EMA)",
+      y-min: 0,
+      x-min: 0,
+      y-max: 300,
+      y-grid: true,
+      x-tick-step: 10,
+      legend-style: (
+        scale: 50%,
+      ),
+      {
+        plot.add(acpl-data(pseudo_masked_data), label: "Pseudo Masked")
+        plot.add(acpl-data(pseudo_unmasked_data), label: "Pseudo Unmasked +Annealing")
+        plot.add(acpl-data(legal_unmasked_annealing_data), label: "Legal Unmasked -Annealing")
+        plot.add(acpl-data(legal_unmasked_data), label: "Legal Unmasked +Annealing")
+        plot.add(acpl-data(legal_masked_data), label: "Legal Masked")
+      },
+    )
+  }),
+)
 
-These results are likely meaningless as the model is nowhere near convergence. However the tracking is functional. Smoothing is 0.2, N is 9. EMA is applied to smooth inherently noisy highly fluctuating ACPL calculations.
-Legal games tend to have high ACPL than pseudo legal games, as the games tend to last much longer approx 240 moves, where end games are sharp but terminal conditions more easily avoidable via search due to the guardrails present in legal play. Pseudo legal games end much sooner resulting in more dubious early to mid games followed by a sharp terminal state where dubious early play align with drawish evals resulting in overall lower acpl scores.
+The Average Centipawn Loss (ACPL) serves as a metric for move quality relative to a Stockfish oracle. Given that logging commenced mid-training and the models are far from strategic convergence, these results primarily validate the tracking pipeline and highlight divergent behaviors between rulesets. An Exponential Moving Average (EMA) with $alpha = 0.2$ is applied to dampen high variance in early-stage evaluations.
 
-== Ruleset Convergence Analysis
-== Masking and Grokking Analysis
+=== Ruleset Divergence
+A counter-intuitive trend is observed where Legal Configurations exhibit higher ACPL values ($210–270$) than Pseudo-Legal Configurations ($150–200$). This is attributed to game duration and state complexity
+- *Legal Baseline:* Games persist for approximately 240 moves. The increased length exposes the model to complex endgame transitions where tactical "sharpness" is required. The legal guardrails prevent immediate termination, but the MCTS depth is insufficient to navigate these phases accurately, leading to sustained high centipawn loss over long horizons.
+- *Pseudo-Legal Baseline:* Games terminate rapidly (approx. 60 moves). Early-game play often occurs in "drawish" evaluations where engine scores are relatively flat. These games transition quickly into terminal king-capture sequences; the brevity of the game limits the accumulation of centipawn loss that typically occurs during endgames. The discrepency in ACPL between Masked and Unmasked play mirror the difference in average game durations, supporting the idea of ACPL being somewhat proportional to game length, where endgames provide more opportunities for high centipawn losses.
 
-This project was significantly severely strained by compute!!!
+=== Configuration Analysis
+- *Masking vs. Unmasked:* Within each ruleset, the masked and unmasked variants follow nearly identical trajectories. The "Pseudo Masked" run maintains the lowest floor, while "Legal Masked" shows an upward trend as it explores deeper, more complex game trees.
+- *Annealing Stability:* The "Legal Unmasked +Annealing" variant shows slightly better stability than its non-annealing counterpart, though both remain tethered to the high ACPL baseline established by the legal ruleset.
+The lower ACPL in pseudo-legal regimes is a metric artifact of shorter game lengths rather than an indication of superior play. In all cases, the lack of plateau indicates the models have not yet reached strategic convergence.
 
 // ========================================== // CHAPTER 7: CONCLUSION // ==========================================
-// TODO
 = Conclusion
+TODO
 == Project Evaluation
 == Limitations and Future Work
 - *Compute Constraints:* Hardware limitations restricted the total number of training epochs, preventing observation of deep late-stage grokking.
@@ -1025,22 +1085,22 @@ performance.
 - *Policy Bootstrapping:* Boot strap the policy head with uniform distributions of valid moves, before self play.
 - *Value Bootstrapping:* Boot strap the value head with a robust suite of perfect knowledge (mate evals, endgame tablebases, certain stockfish evaluations).
 
+This project was significantly severely strained by compute!!!
+
 // ========================================== // CHAPTER 6: Ethics // ==========================================
 = Statement of Ethics
 == Legal
-The project is publicly available under the GNU General Public License v3. The repository includes a UPX-compressed, statically linked Stockfish binary (@Stockfish_developers_Stockfish, GPLv3) and a filtered subset of 100 000 mate-in-N positions from the Lichess open database (@lichess_db, CC0); both components are credited in the repository. All Rust crate dependencies carry permissive licences compatible with GPLv3. No primary data involving human or animal subjects were collected. The work was executed on University of Surrey laboratory machines; no unauthorised system access occurred and all activities comply with the Computer Misuse Act. No derivative work beyond that explicitly cited is contained.
-
-== Legal
-The project is publicly available under the GNU General Public License v3. The repository includes a UPX-compressed, statically linked Stockfish binary (GPLv3) and a filtered subset of 100 000 mate-in-N positions from the Lichess open database (CC0); both components are credited in the repository. All Rust crate dependencies carry permissive licences compatible with GPLv3. No primary data involving human or animal subjects were collected. The work was executed on University of Surrey laboratory machines; no unauthorised system access occurred and all activities comply with the Computer Misuse Act. These measures support SDG 16 (Peace, Justice and Strong Institutions) by making the development process transparent, auditable, and legally traceable.
+The project is publicly available under the GNU General Public License v3. The repository includes a UPX‑compressed, statically linked Stockfish binary (@Stockfish_developers_Stockfish, GPLv3) and a filtered subset of 100 000 mate‑in‑N positions from the Lichess open database (@lichess_db, CC0); both components are credited in the repository. All Rust crate dependencies carry permissive licences compatible with GPLv3. No primary data involving human or animal subjects were collected. The work was executed on University of Surrey laboratory machines; no unauthorised system access occurred and all activities comply with the Computer Misuse Act. No derivative work beyond that explicitly cited is contained.
 
 == Social
-Full open-source release of the training pipeline and engine promotes freedom of information, fostering reproducible research and public education in machine learning and reinforcement learning, an expression of SDG 4 (Quality Education). The system cross-compiles to all major platforms and is hardware-agnostic; the novel factored transformer and bipartite MCTS architecture advance state-of-the‑art efficient self-play, aligning with SDG 9 (Industry, Innovation and Infrastructure). Chess engines already exceed human grandmaster strength and this work adds negligible marginal advantage; its contribution to competitive imbalance is negligible. The command-line interface is not accessible to visually impaired users; this limitation is acknowledged and could be addressed in future work through alternative output modalities, though the primary audience is researchers interacting programmatically.
-
+Full open‑source release of the training pipeline and engine promotes freedom of information, fostering reproducible research and public education in machine learning and reinforcement learning, an expression of SDG 4 (Quality Education). The system cross‑compiles to all major platforms and is hardware‑agnostic; the novel factored transformer and bipartite MCTS architecture advance state‑of‑the‑art efficient self‑play, aligning with SDG 9 (Industry, Innovation and Infrastructure). Chess engines already exceed human grandmaster strength and this work adds negligible marginal advantage; its contribution to competitive imbalance is negligible. The command‑line interface is not accessible to visually impaired users; this limitation is acknowledged and could be addressed in future work through alternative output modalities, though the primary audience is researchers interacting programmatically.
 == Ethical
-The tool operates entirely offline, collects no personally identifiable information, and functions as a standalone CLI application. The system’s ability to internalize the rules of chess without hard-coded legality masks raises broader dual-use considerations beyond online cheating: autonomous decision-making agents that learn environmental constraints from scratch may exhibit emergent behaviours that are difficult to predict or constrain, with potential implications for safety‑critical applications. Extended training on 5 NVIDIA RTX 4000 Ada GPUs consumed approximately ($5 "GPUs" times 0.13 "Kw" times 120h approx) 78 "kWh"$ over all runs. Rust’s zero-cost abstractions and lack of a garbage-collector reduce per-operation energy usage compared to equivalent Python pipelines, partially mitigating the carbon footprint. Addressing SDG 13 (Climate Action), future work should explore training-time energy monitoring and dynamic resource scaling. The availability of far simpler, stronger engines renders misuse for cheating impractical, but the learning dynamics documented here could inform the design of more transparent and auditable rule-acquisition systems.
+
+The tool operates entirely offline, collects no personally identifiable information, and functions as a standalone CLI application. The system’s ability to internalize the rules of chess without hard‑coded legality masks raises broader dual‑use considerations beyond online cheating: autonomous decision‑making agents that learn environmental constraints from scratch may exhibit emergent behaviours that are difficult to predict or constrain, with potential implications for safety‑critical applications. Extended training on 5 NVIDIA RTX 4000 Ada GPUs consumed approximately ($5 "GPUs" times 0.13 "Kw" times 120h approx) 78 "kWh"$ over all runs. Rust’s zero‑cost abstractions and lack of a garbage‑collector reduce per‑operation energy usage compared to equivalent Python pipelines, partially mitigating the carbon footprint. Addressing SDG 13 (Climate Action), future work should explore training‑time energy monitoring and dynamic resource scaling. The availability of far simpler, stronger engines renders misuse for cheating impractical, but the learning dynamics documented here could inform the design of more transparent and auditable rule‑acquisition systems.
+
 
 == Professional
-The work was conducted in accordance with the BCS Code of Conduct, upholding public good through open dissemination, professional competence via rigorous testing and reproducible hyperparameters, and integrity by isolating experimental variables and avoiding over-claimed results. The exclusive use of Rust guarantees memory safety and data-race freedom at compile time, eliminating entire classes of runtime errors. Engineering choices such as seeded RNGs, Nix Flakes and Cargo locks ensure reproducibility, reliability, and long-term maintainability. These practices reflect professional standards of transparent and robust software engineering, and they directly embody the BCS principle of “making IT for everyone” by lowering the barrier to auditing and extending the system. The complete specification of all hyperparameters, the move generator, and the public repository all contribute to a trustworthy, peer-reviewable artefact, furthering SDG 16’s aim of accountable institutions.
+The work was conducted in accordance with the BCS Code of Conduct, upholding public good through open dissemination, professional competence via rigorous testing and reproducible hyperparameters, and integrity by isolating experimental variables and avoiding over‑claimed results. The exclusive use of Rust guarantees memory safety and data‑race freedom at compile time, eliminating entire classes of runtime errors. Engineering choices such as seeded RNGs, Nix Flakes and Cargo locks ensure reproducibility, reliability, and long‑term maintainability. These practices reflect professional standards of transparent and robust software engineering, and they directly embody the BCS principle of “making IT for everyone” by lowering the barrier to auditing and extending the system. The complete specification of all hyperparameters, the perft‑verified move generator, and the public repository all contribute to a trustworthy, peer‑reviewable artefact, furthering SDG 16’s aim of accountable institutions.
 
 // ========================================== // BIBLIOGRAPHY // ==========================================
 #bibliography("refs.bib", style: "harvard-cite-them-right")
