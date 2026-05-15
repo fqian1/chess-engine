@@ -268,7 +268,7 @@ impl ChessPosition {
     }
 
     pub fn is_legal(&self, mov: &ChessMove) -> bool {
-        let mut temp_board = self.chessboard.clone();
+        let mut temp_board = self.chessboard;
         temp_board.apply_move(mov, self.side_to_move, self.en_passant);
 
         let king_bb = temp_board.get_piece_bitboard(self.side_to_move, PieceType::King);

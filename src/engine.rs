@@ -12,7 +12,7 @@ use burn::{
     prelude::{Backend, ToElement},
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend},
 };
-use log::{debug, info, trace};
+use log::{info, trace};
 use rand::TryRng;
 use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{SeedableRng, rngs::SmallRng};
@@ -21,7 +21,7 @@ use rayon::prelude::*;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::{ChessBatcher, Color, Stockfish, TrainingSample};
 use crate::{
@@ -171,7 +171,7 @@ pub fn play<B: AutodiffBackend>(path_arg: &PathBuf, mcts_config: &MctsConfig, tr
     loop {
         info!("Starting Self play - Train loop: cycle {}", iterations);
 
-        let mut avg_acpl = 0.0;
+        let _avg_acpl = 0.0;
         let mut illegal_move_weight: f64 = 0.0;
 
         for _ in 0..training_config.steps_per_iter {

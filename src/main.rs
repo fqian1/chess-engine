@@ -16,22 +16,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #![recursion_limit = "256"]
-
+use crate::{ChessGame, ChessTransformer, Mcts, MctsConfig, expand_batch};
+use burn::{lr_scheduler::noam::NoamLrSchedulerConfig, module::Module, optim::AdamWConfig};
+use log::info;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
 use burn::backend::Autodiff;
-use burn::lr_scheduler::noam::NoamLrSchedulerConfig;
-use burn::module::Module;
-use burn::optim::AdamWConfig;
 use burn::record::{FullPrecisionSettings, NamedMpkFileRecorder, Recorder};
 use chess_engine::model::ChessTransformerConfig;
 use chess_engine::*;
 use clap::Parser;
-use env_logger::Builder;
-use log::debug;
-use rand::rngs::SmallRng;
-use serde::de;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -130,6 +125,7 @@ fn main() {
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("failed to read input");
         input = input.trim().to_lowercase();
+
         match input.as_str() {
             "1" => {
                 println!("Using config: \n{:?}\n{:?}", training_config, mcts_config);
@@ -147,46 +143,50 @@ fn main() {
                     println!("Failed to parse fen, creating default game");
                     ChessGame::default()
                 });
-                let _mcts = [Mcts::from_game(&game, 1000, mcts_config, 1234)];
-
-                println!("printing artifact dir: {:?}", artifact_dir.clone());
 
                 let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::default();
                 let record = recorder.load(artifact_dir.clone(), &device).expect("Failed to load .mpk model record");
-
                 let model: ChessTransformer<MyInferenceBackend> = training_config.model.init(&device);
                 let model = model.load_record(record);
 
-                let mut training_config = training_config.clone();
-                training_config.batch_size = 1;
+                let mut inf_config = training_config.clone();
+                inf_config.batch_size = 1;
+                inf_config.masked = true;
+                inf_config.legal = mcts_config.legal;
 
-                let inputs = vec![NetworkInputs::from_position(&game.position, None)];
-                debug!("{}", inputs[0]);
+                let mut mcts = Mcts::from_game(&game, 65536, mcts_config, 1234);
 
-                let mask = game.position.make_mask(true, None);
-                let out = model_make_outputs(model.clone(), &inputs, &training_config, mask.to_vec(), &device);
-                debug!("{}", out[0]);
+                println!("Running first pass (choose from square)...");
+                for _ in 0..mcts_config.num_simulations {
+                    mcts.traverse_get_terminal();
+                    let mcts_ref = std::slice::from_mut(&mut mcts);
+                    expand_batch(mcts_ref, model.clone(), &inf_config, &device);
+                }
 
-                let sq = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
+                let root_node = &mcts.node_arena.buffer[mcts.root];
+                let (start, end) = root_node.get_data().child_edge_range.expect("Root not expanded");
+                let best_from_edge = mcts.edge_arena.buffer[start..end].iter().max_by_key(|e| e.visits).expect("No edges");
+                let from_sq = best_from_edge.square;
+                let piece_move_node_idx = best_from_edge.child_node_idx.expect("Edge not expanded");
 
-                let sq = sq.unwrap().0;
+                mcts.root = piece_move_node_idx;
 
-                let inputs = vec![NetworkInputs::from_position(&game.position, Some(&sq))];
-                debug!("{}", inputs[0]);
+                println!("Running second pass (choose to square)...");
+                for _ in 0..mcts_config.num_simulations {
+                    mcts.traverse_get_terminal();
+                    let mcts_ref = std::slice::from_mut(&mut mcts);
+                    expand_batch(mcts_ref, model.clone(), &inf_config, &device);
+                }
 
-                let mask = game.position.make_mask(true, Some(sq));
-                let out = model_make_outputs(model.clone(), &inputs, &training_config, mask.to_vec(), &device);
-                debug!("{}", out[0]);
+                let move_root = &mcts.node_arena.buffer[mcts.root];
+                let (start2, end2) = move_root.get_data().child_edge_range.expect("Move root not expanded");
+                let best_to_edge = mcts.edge_arena.buffer[start2..end2].iter().max_by_key(|e| e.visits).expect("No to-edges");
+                let to_sq = best_to_edge.square;
+                let promotion = best_to_edge.promotion_piece;
 
-                let sq2 = out[0].as_squares().into_iter().max_by(|&a, &b| a.1.total_cmp(&b.1));
-                let sq2 = sq2.unwrap().0;
-
-                let mov = ChessMove::new(sq, sq2, None);
-
-                // this is just no mcts raw guess, doesnt handle promotions either
-                print!("\nI picked: {}\n", mov.to_uci());
+                let mov = ChessMove::new(from_sq, to_sq, promotion);
+                println!("\nI picked: {}", mov.to_uci());
                 game.make_move(&mov);
-                // println!("{}", game.position);
                 println!("{}", game.position.to_fen());
             }
             _ => println!("Invalid - select {{1|2}}"),

@@ -1,13 +1,12 @@
 use arrayvec::ArrayVec;
 use core::fmt;
 use log::{debug, info, trace};
-use rand::{Rng, rngs::SmallRng};
+use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
-use std::io::Read;
 
 use burn::prelude::Backend;
 
@@ -18,11 +17,11 @@ use crate::{
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct NodeData {
-    chess_position_idx: usize,                // assigned on creation
-    child_edge_range: Option<(usize, usize)>, // assigned on expansion
-    value: Option<[f32; 3]>,                  // assigned on expansion
-    is_terminal: bool,                        // assigned on traversal
-    visits: usize,                            // updated on traversal
+    pub chess_position_idx: usize,                // assigned on creation
+    pub child_edge_range: Option<(usize, usize)>, // assigned on expansion
+    pub value: Option<[f32; 3]>,                  // assigned on expansion
+    pub is_terminal: bool,                        // assigned on traversal
+    pub visits: usize,                            // updated on traversal
 }
 
 impl NodeData {
@@ -68,14 +67,14 @@ impl Default for MctsNode {
 }
 
 impl MctsNode {
-    fn get_data_mut(&mut self) -> &mut NodeData {
+    pub fn get_data_mut(&mut self) -> &mut NodeData {
         match self {
             Self::PieceSelect { data } => data,
             Self::PieceMove { data, .. } => data,
         }
     }
 
-    fn get_data(&self) -> &NodeData {
+    pub fn get_data(&self) -> &NodeData {
         match self {
             Self::PieceSelect { data } => data,
             Self::PieceMove { data, .. } => data,
@@ -87,14 +86,14 @@ impl MctsNode {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MctsEdge {
-    square: ChessSquare,
-    confidence: f32, // the policy prob
-    visits: u32,
-    total_value: [f32; 3],         // cumulative value of leaf nodes
-    mean_value: [f32; 3],          // total val / visits
-    child_node_idx: Option<usize>, // None if not explored
-    parent_node_idx: usize,
-    promotion_piece: Option<PieceType>,
+    pub square: ChessSquare,
+    pub confidence: f32, // the policy prob
+    pub visits: u32,
+    pub total_value: [f32; 3],         // cumulative value of leaf nodes
+    pub mean_value: [f32; 3],          // total val / visits
+    pub child_node_idx: Option<usize>, // None if not explored
+    pub parent_node_idx: usize,
+    pub promotion_piece: Option<PieceType>,
 }
 
 impl fmt::Display for MctsEdge {
@@ -151,7 +150,7 @@ impl<T: Clone> Arena<T> {
         self.freelist.insert(index, idx);
     }
 
-    fn push(&mut self, data: T) -> usize {
+    pub fn push(&mut self, data: T) -> usize {
         if let Some(idx) = self.freelist.pop() {
             self.buffer[idx] = data;
             idx

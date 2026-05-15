@@ -57,7 +57,7 @@ pub struct NetworkLabels {
 impl fmt::Display for NetworkLabels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
-        output.push_str("\n");
+        output.push('\n');
         for i in (0..8).rev() {
             for j in 0..8 {
                 let val = self.policy[i * 8 + j];
