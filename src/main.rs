@@ -73,7 +73,7 @@ pub fn display_moves(moves: &Vec<ChessMove>) {
 }
 
 fn main() {
-    Builder::new().filter_level(log::LevelFilter::Info).init();
+    env_logger::init();
 
     let args = Args::parse();
 
